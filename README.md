@@ -10,9 +10,9 @@
 
 ```bash
 uv sync --extra asr
-uv run python scripts/bili_insight.py doctor
-uv run python scripts/bili_insight.py fetch BVxxxxxxxxxx --out /absolute/path/task-work
-uv run --extra asr python scripts/bili_insight.py transcribe --out /absolute/path/task-work
+uv run --no-sync python scripts/bili_insight.py doctor
+uv run --no-sync python scripts/bili_insight.py fetch BVxxxxxxxxxx --out /absolute/path/task-work
+uv run --no-sync python scripts/bili_insight.py transcribe --out /absolute/path/task-work
 ```
 
 本地素材用 `import-media /path/video.mp4 --out …`。画面分析需下载 `--mode video` 后运行 `frames --out …`。OCR 可选，需要 Tesseract 中文语言包。
@@ -35,8 +35,8 @@ ln -s /absolute/path/bili-video-insight ~/.codex/skills/bili-video-insight
 
 ```bash
 uv sync --extra dev
-uv run --extra dev pytest
-uv run --extra dev ruff check scripts tests
+uv run --no-sync pytest
+uv run --no-sync ruff check scripts tests
 ```
 
 下载受站点、网络与账户权限影响。工具不自动读取浏览器身份或绕过访问限制。ASR 可能误识别人名、公式和术语；采样帧不覆盖全部画面文字。结果需核对后交付。

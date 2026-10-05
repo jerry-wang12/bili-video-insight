@@ -5,7 +5,7 @@ description: 获取和解析 B站视频或用户提供的本地音视频，通�
 
 # B站视频解析
 
-在本 Skill 目录执行 `uv run python scripts/bili_insight.py …`。安装、命令和大纲数据格式见 [references/workflow.md](references/workflow.md)；首次使用或需要具体参数时读取。
+在本 Skill 目录执行 `uv run --no-sync python scripts/bili_insight.py …`。安装、命令和大纲数据格式见 [references/workflow.md](references/workflow.md)；首次使用或需要具体参数时读取。
 
 ## 工作流
 

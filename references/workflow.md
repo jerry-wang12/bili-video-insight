@@ -6,7 +6,7 @@ Python 3.10+，推荐 uv。系统需要 `ffmpeg` 与 `ffprobe`。只获取媒体
 
 ```bash
 uv sync
-uv run python scripts/bili_insight.py doctor
+uv run --no-sync python scripts/bili_insight.py doctor
 ```
 
 本地语音转写：`uv sync --extra asr`。默认 faster-whisper `small`、CPU int8；首次使用下载模型到运行目录 `model-cache/`。tiny 可验证管线，不适合作为中文学术长视频的最终质量保证。模型不可访问时只阻碍转写。
@@ -19,17 +19,17 @@ uv run python scripts/bili_insight.py doctor
 
 ```bash
 cd "$SKILL_DIR"
-uv run python scripts/bili_insight.py fetch BV1wZcVevENV --out "$RUN_DIR"
-uv run --extra asr python scripts/bili_insight.py transcribe --out "$RUN_DIR" --model small --language zh
+uv run --no-sync python scripts/bili_insight.py fetch BV1wZcVevENV --out "$RUN_DIR"
+uv run --no-sync python scripts/bili_insight.py transcribe --out "$RUN_DIR" --model small --language zh
 ```
 
 本地视频：
 
 ```bash
-uv run python scripts/bili_insight.py import-media /absolute/path/video.mp4 --out "$RUN_DIR"
-uv run python scripts/bili_insight.py frames --out "$RUN_DIR" --interval 60
-uv run python scripts/bili_insight.py frames --out "$RUN_DIR" --times 626,1977,3601
-uv run python scripts/bili_insight.py ocr --out "$RUN_DIR" --language chi_sim+eng
+uv run --no-sync python scripts/bili_insight.py import-media /absolute/path/video.mp4 --out "$RUN_DIR"
+uv run --no-sync python scripts/bili_insight.py frames --out "$RUN_DIR" --interval 60
+uv run --no-sync python scripts/bili_insight.py frames --out "$RUN_DIR" --times 626,1977,3601
+uv run --no-sync python scripts/bili_insight.py ocr --out "$RUN_DIR" --language chi_sim+eng
 ```
 
 需要画面时，选新目录运行 `fetch … --mode video --height 480`。更高 height 的实际可用性受正常账户权限限制；不保证接口始终可用。接受 BV号、B站视频链接与 b23.tv 短链接，不接受任意其他域名。
@@ -72,7 +72,7 @@ uv run python scripts/bili_insight.py ocr --out "$RUN_DIR" --language chi_sim+en
 从实际转写取 `s…` ID，从帧索引取 `f…` ID，不用示例 ID 代替真实证据。每个叶节点至少一个证据，最多十二层；引用时间由证据推导。画面需由 Codex 看过，渲染器只能检查 ID 存在。
 
 ```bash
-uv run python scripts/bili_insight.py render --out "$RUN_DIR" --outline "$RUN_DIR/outline.json"
+uv run --no-sync python scripts/bili_insight.py render --out "$RUN_DIR" --outline "$RUN_DIR/outline.json"
 ```
 
 用户要求完整文案但只给外部链接时，区分技术能力与当前内容规则；不能通过写入文件绕过规则。上传素材时按适用规则整理。
