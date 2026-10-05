@@ -13,7 +13,15 @@ uv run --no-sync python scripts/bili_insight.py doctor
 
 可选 OCR 需要 `tesseract` 和 `chi_sim`、`eng` 语言包；也可由 Codex 查看关键帧。系统程序按操作系统安装，脚本不修改系统。
 
-## 命令
+## 统一入口与资料库
+
+日常优先使用 `./bili run SOURCE [--mode video]`；完整例子、目录规则与 FAQ 见 [README.md](../README.md)。默认资料库是 `~/Documents/Bili-Video-Insight/`，可由 `BILI_INSIGHT_HOME` 或 `--library` 覆盖。`run` 到材料就绪即结束，不能替代语义分析。
+
+资料库任务在 `<资料库>/tasks/<来源ID>/<参数摘要>/`，证据与分析包在 `work/`；Codex 读取全部材料并写入 `work/outline.json`，再 `./bili finish TASK_DIR` 导出到 `outputs/`。`./bili list` 更新离线索引，`./bili bundle TASK_DIR` 只打包四种交付物。重复运行复用相同设置；参数变化或 `--new` 创建独立任务。任务状态及错误写入 `task.json`。
+
+资料库任务共享 `cache/models/`。以下低层命令仍使用独立 `--out` 目录，其模型缓存默认位于该目录，也可以用 `transcribe --model-cache` 指定共享缓存；独立目录不自动列入资料库。
+
+## 低层命令
 
 `RUN_DIR` 是用户任务的独立工作目录，不是仓库；`SKILL_DIR` 是 Skill 目录。shell 变量不覆盖 HOME 或 CODEX_HOME。
 

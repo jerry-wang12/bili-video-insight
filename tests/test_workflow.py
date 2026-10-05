@@ -189,3 +189,89 @@ def test_tiny_tail_is_merged_instead_of_transcribed_separately(tmp_path, monkeyp
     assert len(calls) == 1
     packet = (tmp_path / "analysis-packets/0000.md").read_text()
     assert "tail" in packet
+
+
+def library_args(source, root, **overrides):
+    values = {
+        "source": str(source),
+        "library": str(root),
+        "mode": "audio",
+        "model": "small",
+        "language": "zh",
+        "interval": 60,
+        "height": 480,
+        "cookies": None,
+        "new": False,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_library_resume_variants_and_failure_index(tmp_path, monkeypatch):
+    calls = []
+
+    def acquire(args):
+        calls.append("fetch")
+        module.save_json(Path(args.out) / "manifest.json", {"title": "<视频>", "source": args.source})
+
+    def fail(args):
+        raise module.WorkflowError("blocked https://secret.example/token")
+
+    monkeypatch.setattr(module, "fetch", acquire)
+    monkeypatch.setattr(module, "transcribe", fail)
+    args = library_args("BV1wZcVevENV", tmp_path)
+    with pytest.raises(module.WorkflowError):
+        module.run_task(args)
+    task_file = next(tmp_path.glob("tasks/*/*/task.json"))
+    assert module.read_json(task_file)["status"] == "blocked"
+    assert "secret.example" not in task_file.read_text()
+    assert "&lt;视频&gt;" in (tmp_path / "index.html").read_text()
+    monkeypatch.setattr(module, "transcribe", lambda args: calls.append("asr"))
+    module.run_task(args)
+    module.run_task(args)
+    assert calls == ["fetch", "fetch", "asr"]
+    assert module.read_json(task_file)["status"] == "awaiting_analysis"
+    module.run_task(library_args("BV1wZcVevENV", tmp_path, model="tiny"))
+    assert len(list(tmp_path.glob("tasks/*/*/task.json"))) == 2
+    module.run_task(library_args("BV1wZcVevENV", tmp_path, new=True))
+    assert len(list(tmp_path.glob("tasks/*/*/task.json"))) == 3
+
+
+def test_library_finish_and_bundle_only_exports(tmp_path):
+    import zipfile
+
+    directory = tmp_path / "tasks" / "BV1wZcVevENV" / "sample"
+    work = directory / "work"
+    module.save_json(
+        directory / "task.json",
+        {
+            "status": "awaiting_analysis",
+            "title": "示例",
+            "source_id": "BV1wZcVevENV",
+            "created_at": "2026-10-05",
+        },
+    )
+    module.save_json(
+        work / "transcript.json",
+        {
+            "complete": True,
+            "segments": [{"id": "s0000-0000", "start": 0, "end": 1, "text": "private transcript"}],
+        },
+    )
+    module.save_json(
+        work / "outline.json",
+        {"title": "示例", "children": [{"title": "观点", "body": "原创概括", "evidence": ["s0000-0000"]}]},
+    )
+    args = SimpleNamespace(task=str(directory))
+    with pytest.raises(module.WorkflowError):
+        module.bundle_task(args)
+    module.finish_task(args)
+    (directory / "outputs" / "cookies.txt").write_text("sensitive")
+    module.bundle_task(args)
+    with zipfile.ZipFile(directory / "outputs" / "deliverables.zip") as archive:
+        assert set(archive.namelist()) == {"outline.md", "mindmap.md", "mindmap.mm", "mindmap.html"}
+    assert module.read_json(directory / "task.json")["status"] == "completed"
+    assert "outputs/mindmap.html" in (directory / "index.html").read_text()
+
+    module.finish_task(args)
+    assert not (directory / "outputs" / "deliverables.zip").exists()

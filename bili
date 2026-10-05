@@ -1,0 +1,9 @@
+#!/bin/sh
+# Resolve the launcher relative to its checkout; never depend on the caller's cwd.
+set -eu
+BILI_PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ ! -x "$BILI_PROJECT_DIR/.venv/bin/python" ]; then
+    echo "请先在项目目录执行 uv sync --extra asr" >&2
+    exit 1
+fi
+exec "$BILI_PROJECT_DIR/.venv/bin/python" "$BILI_PROJECT_DIR/scripts/bili_insight.py" "$@"

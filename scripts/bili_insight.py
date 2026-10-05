@@ -4,17 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import html
 import importlib.util
 import json
 import math
+import os
 import platform
 import re
 import shutil
 import subprocess
 import sys
+import uuid
 import xml.etree.ElementTree as ET
+import zipfile
+from datetime import datetime
 from pathlib import Path
 
 
@@ -298,7 +303,9 @@ def transcribe(args):
                 args.model,
                 device=args.device,
                 compute_type=args.compute_type,
-                download_root=str(out / "model-cache"),
+                download_root=str(
+                    output_directory(getattr(args, "model_cache", None) or out / "model-cache")
+                ),
             )
         wav = work / f"{index:04}.wav"
         run_command(
@@ -510,6 +517,180 @@ summary{{cursor:pointer;font-weight:650}}p{{white-space:pre-wrap;margin:8px 0}}s
     print("已生成 outline.md、mindmap.md、mindmap.mm、mindmap.html")
 
 
+# High-level library workflow; low-level commands retain their existing --out contract.
+def library_directory(value=None):
+    return output_directory(
+        value or os.environ.get("BILI_INSIGHT_HOME") or Path.home() / "Documents/Bili-Video-Insight"
+    )
+
+
+def library_index(root):
+    root = library_directory(root)
+    root.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for path in sorted((root / "tasks").glob("*/*/task.json"), reverse=True):
+        task = read_json(path)
+        directory = path.parent
+        title = task.get("title") or task["source_id"]
+        status = task["status"]
+        links = [("任务详情", "index.html")]
+        for name in ("outline.md", "mindmap.html", "mindmap.mm", "deliverables.zip"):
+            if (directory / "outputs" / name).is_file():
+                links.append((name, "outputs/" + name))
+        navigation = " · ".join(
+            f'<a href="{html.escape(url)}">{html.escape(label)}</a>' for label, url in links
+        )
+        error = f"<p>{html.escape(task['error'])}</p>" if task.get("error") else ""
+        (directory / "index.html").write_text(
+            f'<!doctype html><meta charset="utf-8"><title>{html.escape(title)}</title>'
+            f"<h1>{html.escape(title)}</h1><p>状态：{html.escape(status)}</p>{error}"
+            f"<p>{navigation}</p><p>分析材料：work/analysis-packets；原始转写：work/transcript.txt；"
+            "中间文件与媒体保留在 work/。交付文件在 outputs/。</p>",
+            encoding="utf-8",
+        )
+        url = directory.relative_to(root).as_posix() + "/index.html"
+        rows.append(
+            f'<li><a href="{html.escape(url)}">{html.escape(title)}</a> — {html.escape(status)}'
+            f" <small>{html.escape(task['created_at'])}</small></li>"
+        )
+    (root / "index.html").write_text(
+        '<!doctype html><meta charset="utf-8"><title>视频分析资料库</title>'
+        "<h1>视频分析资料库</h1><p>awaiting_analysis：转写已就绪，等待内容分析；"
+        "completed：大纲已渲染，仍需内容核对；blocked：查看任务错误。</p><ul>" + "".join(rows) + "</ul>",
+        encoding="utf-8",
+    )
+    print(f"资料库：{root / 'index.html'}")
+
+
+def run_task(args):
+    root = library_directory(args.library)
+    local = Path(args.source).expanduser()
+    is_local = local.is_file()
+    source = str(local.resolve()) if is_local else normalized_source(args.source)
+    match = re.search(r"BV[0-9A-Za-z]{10}", source) if not is_local else None
+    source_id = (
+        match.group()
+        if match
+        else ("local-" if is_local else "link-")
+        + hashlib.sha256((digest(local) if is_local else source).encode()).hexdigest()[:12]
+    )
+    settings = {
+        "source": source,
+        "mode": args.mode,
+        "model": args.model,
+        "language": args.language,
+        "interval": args.interval,
+        "height": args.height,
+    }
+    version = hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()[:12]
+    if args.new:
+        version += "-" + uuid.uuid4().hex[:8]
+    directory = root / "tasks" / source_id / version
+    directory.mkdir(parents=True, exist_ok=True)
+    # flock is released by the OS even if the process is interrupted.
+    with (directory / ".lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise WorkflowError("同一任务正在运行；等待其完成再恢复") from exc
+        task_path = directory / "task.json"
+        task = (
+            read_json(task_path)
+            if task_path.exists()
+            else {
+                "schema_version": 1,
+                "source_id": source_id,
+                "settings": settings,
+                "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            }
+        )
+        if task["settings"] != settings:
+            raise WorkflowError("任务参数冲突；使用 --new 新建任务")
+        if task.get("status") in {"awaiting_analysis", "completed"}:
+            print(f"已复用任务：{directory}")
+            library_index(root)
+            return
+        task.update(status="processing", error=None)
+        save_json(task_path, task)
+        work = directory / "work"
+        namespace = argparse.Namespace(
+            out=str(work),
+            source=source,
+            mode=args.mode,
+            height=args.height,
+            cookies=args.cookies,
+            model=args.model,
+            language=args.language,
+            chunk_seconds=600,
+            device="cpu",
+            compute_type="int8",
+            model_cache=str(root / "cache/models"),
+            interval=args.interval,
+            times=None,
+            max_frames=120,
+        )
+        try:
+            if is_local:
+                import_media(namespace)
+            else:
+                fetch(namespace)
+            task["title"] = load_manifest(namespace).get("title", source_id)
+            transcribe(namespace)
+            if args.mode == "video":
+                frames(namespace)
+            task["status"] = "awaiting_analysis"
+        except Exception as exc:
+            task.update(status="blocked", error=safe_message(exc))
+            raise
+        finally:
+            save_json(task_path, task)
+            library_index(root)
+        print(f"材料已就绪：{work}\n请让 Codex 读取所有 analysis-packets 并生成 work/outline.json。")
+        print(f"完成分析后：./bili finish '{directory}'")
+
+
+def managed_task(value):
+    directory = output_directory(value)
+    if directory.parents[1].name != "tasks" or not (directory / "task.json").is_file():
+        raise WorkflowError("请指定资料库 tasks/来源/版本 下包含 task.json 的任务目录")
+    return directory
+
+
+def finish_task(args):
+    directory = managed_task(args.task)
+    task_path = directory / "task.json"
+    task = read_json(task_path)
+    work = directory / "work"
+    render(argparse.Namespace(out=str(work), outline=str(work / "outline.json")))
+    outputs = directory / "outputs"
+    outputs.mkdir(exist_ok=True)
+    for name in ("outline.md", "mindmap.md", "mindmap.mm", "mindmap.html"):
+        shutil.copy2(work / name, outputs / name)
+    (outputs / "deliverables.zip").unlink(missing_ok=True)
+    task.update(status="completed", error=None)
+    save_json(task_path, task)
+    library_index(directory.parents[2])
+    print(f"交付物：{outputs}")
+
+
+def bundle_task(args):
+    directory = managed_task(args.task)
+    task = read_json(directory / "task.json")
+    if task.get("status") != "completed":
+        raise WorkflowError("先完成 finish 再打包")
+    outputs = directory / "outputs"
+    # Explicit allowlist: never include transcripts, media, credentials or arbitrary files.
+    names = ("outline.md", "mindmap.md", "mindmap.mm", "mindmap.html")
+    for name in names:
+        if not (outputs / name).is_file():
+            raise WorkflowError(f"缺少交付物：{name}")
+    with zipfile.ZipFile(outputs / "deliverables.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+        for name in names:
+            archive.write(outputs / name, name)
+    library_index(directory.parents[2])
+    print(f"交付包：{outputs / 'deliverables.zip'}")
+
+
 def positive(value):
     number = int(value)
     if number <= 0:
@@ -521,6 +702,24 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     commands = p.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor").set_defaults(func=doctor)
+    run = commands.add_parser("run", help="下载/导入、转写并整理到统一资料库")
+    run.add_argument("source", help="BV号、B站链接或本地媒体文件")
+    run.add_argument("--library", help="覆盖 BILI_INSIGHT_HOME 和默认资料库")
+    run.add_argument("--mode", choices=["audio", "video"], default="audio")
+    run.add_argument("--height", type=positive, default=480)
+    run.add_argument("--model", default="small")
+    run.add_argument("--language", default="zh")
+    run.add_argument("--interval", type=positive, default=60)
+    run.add_argument("--cookies")
+    run.add_argument("--new", action="store_true", help="创建独立任务，不复用此前结果")
+    run.set_defaults(func=run_task)
+    listing = commands.add_parser("list", help="重建并显示离线资料库索引")
+    listing.add_argument("--library")
+    listing.set_defaults(func=lambda args: library_index(library_directory(args.library)))
+    for name, function in (("finish", finish_task), ("bundle", bundle_task)):
+        child = commands.add_parser(name)
+        child.add_argument("task", help="run 输出的任务目录（包含 task.json）")
+        child.set_defaults(func=function)
     for name, function in (
         ("fetch", fetch),
         ("import-media", import_media),
@@ -539,6 +738,7 @@ def parser():
             child.add_argument("--height", type=positive, default=480)
             child.add_argument("--cookies", help="用户显式提供的 Netscape cookie 文件；不会自动读取浏览器")
         if name == "transcribe":
+            child.add_argument("--model-cache", help="共享模型缓存目录；默认位于运行目录")
             child.add_argument("--model", default="small", help="faster-whisper 模型名或本地模型目录")
             child.add_argument("--language", default="zh")
             child.add_argument("--chunk-seconds", type=positive, default=600)
