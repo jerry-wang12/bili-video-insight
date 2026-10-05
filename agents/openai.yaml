@@ -1,0 +1,4 @@
+interface:
+  display_name: "B站视频解析"
+  short_description: "获取视频音轨并转写，结合关键帧整理带时间点的大纲和思维导图"
+  default_prompt: "使用 $bili-video-insight 解析这个 B 站视频，整理详细大纲和思维导图。"
