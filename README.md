@@ -64,7 +64,7 @@ ln -s "$PWD" ~/.codex/skills/bili-video-insight
 ./bili run /absolute/path/video.mp4 --mode video --language en --model small
 ```
 
-命令结束会打印任务目录，例如 `~/Documents/Bili-Video-Insight/tasks/BV1wZcVevENV/40e4ca171712/`。状态是 `awaiting_analysis`。把**实际打印的任务目录**交给 Codex：
+命令结束会打印任务目录，例如 `~/Code/skills/bili-video-insight/data/tasks/BV1wZcVevENV/40e4ca171712/`。状态是 `awaiting_analysis`。把**实际打印的任务目录**交给 Codex：
 
 ```text
 使用 $bili-video-insight 继续分析这个任务目录：<实际任务目录>。
@@ -82,15 +82,15 @@ Codex 生成大纲后，手动导出或打包也很简单：
 `finish` 验证完整转写、大纲证据和分段时间后导出大纲、脑图与阅读页；`bundle` 按白名单打包这些交付物。`list` 重建离线目录页并打印路径。macOS 打开默认资料库：
 
 ```bash
-open ~/Documents/Bili-Video-Insight/index.html
+open ~/Code/skills/bili-video-insight/data/index.html
 ```
 
 ## 结果存在哪里
 
-**默认资料库：`~/Documents/Bili-Video-Insight/`。** 源码留在 `~/Code/skills/bili-video-insight/`，运行数据不能写进代码仓库。
+**默认资料库：项目目录下的 `data/`。** 例如 `~/Code/skills/bili-video-insight/data/`。整个目录已加入 `.gitignore`，与源码放在同一个项目中，但不进入 Git 提交。统一入口是 `data/index.html`；从任何工作目录调用启动器，默认位置都相同。
 
 ```text
-Bili-Video-Insight/
+bili-video-insight/data/
 ├── index.html                       # 所有任务的离线目录：标题、状态、入口
 ├── cache/models/                    # 所有新任务共用的模型下载缓存
 └── tasks/
@@ -121,7 +121,8 @@ Bili-Video-Insight/
 2. **分享用 `outputs/deliverables.zip`**；原始转写、媒体、凭据和模型不进入交付包。完整转写仅留在 `work/`，其交付仍受材料权限和适用内容规则约束。
 3. 相同来源、模型、语言、模式、抽帧间隔与清晰度复用同一任务；参数变化产生新目录。短链接按输入 URL 标识，不保证与 BV号合并。`--new` 强制新建版本，旧任务保留。
 4. `processing` 为处理中；`blocked` 表示失败；`awaiting_analysis` 为材料就绪、待分析；`completed` 为大纲已验证并渲染，仍需核对内容准确性。
-5. 任务保留全部中间材料以支持恢复；工具不会自动清理磁盘。本地导入引用原文件，不复制，移动原文件前先考虑后续复核需要。
+5. 仓库内只允许将运行数据写入 `data/`，不能写入源码目录或任意其他子目录。仓库外资料库仍支持。
+6. 任务保留全部中间材料以支持恢复；工具不会自动清理磁盘。本地导入引用原文件，不复制，移动原文件前先考虑后续复核需要。
 
 改变资料库位置可以单次指定或设置环境变量，优先级为 `--library` → `BILI_INSIGHT_HOME` → 默认路径：
 
@@ -131,7 +132,19 @@ Bili-Video-Insight/
 export BILI_INSIGHT_HOME=/absolute/path/video-library
 ```
 
-已有低层 `fetch/transcribe/render --out …` 命令继续可用，独立目录不会自动出现在新资料库里。具体参数和大纲格式见 [运行文档](references/workflow.md)。
+已有低层 `fetch/transcribe/render --out …` 命令继续可用。要把已有的完整转写目录接入资料库：
+
+```bash
+./bili adopt /absolute/path/legacy-run
+# 使用 adopt 实际打印的任务目录
+./bili finish /absolute/path/imported-task
+./bili bundle /absolute/path/imported-task
+./bili list
+```
+
+`adopt` 复制现有转写、分析包、分析源文件、校验通过的媒体与采样画面，并更新媒体和画面的路径；保留原目录，不重新下载或转写。接入版本以 `imported-` 开头，不推断旧任务未记录的抽帧参数。重复接入同一个目录不会覆盖已接入的分析；后续修改应在新任务的 `work/outline.json` 中进行。模型缓存不随接入复制，新任务使用资料库的共享缓存。已有独立目录和旧默认资料库不会悄悄迁移，需明确 `adopt` 或继续指定原 `--library`。
+
+具体参数和大纲格式见 [运行文档](references/workflow.md)。
 
 ## 处理逻辑
 

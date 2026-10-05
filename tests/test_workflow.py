@@ -28,6 +28,17 @@ def test_run_data_cannot_enter_skill_repository():
         module.output_directory(Path(__file__).parents[1] / "private-run")
 
 
+def test_default_library_is_project_data_independent_of_cwd(tmp_path, monkeypatch):
+    project = Path(__file__).resolve().parents[1]
+    monkeypatch.delenv("BILI_INSIGHT_HOME", raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert module.library_directory() == project / "data"
+    assert module.output_directory(project / "data/tasks/example/work") == project / "data/tasks/example/work"
+    monkeypatch.setenv("BILI_INSIGHT_HOME", str(tmp_path / "custom"))
+    assert module.library_directory() == tmp_path / "custom"
+    assert module.library_directory(tmp_path / "explicit") == tmp_path / "explicit"
+
+
 def test_srt_rounding_rolls_over():
     assert module.timestamp(59.9996, True) == "00:01:00,000"
 
@@ -281,6 +292,61 @@ def test_library_finish_and_bundle_only_exports(tmp_path):
 
     module.finish_task(args)
     assert not (directory / "outputs" / "deliverables.zip").exists()
+
+
+def test_adopt_copies_external_assets_and_preserves_source_and_new_analysis(tmp_path):
+    legacy = tmp_path / "legacy"
+    media = tmp_path / "audio.m4a"
+    media.write_bytes(b"existing audio")
+    frame = tmp_path / "frame.jpg"
+    frame.write_bytes(b"existing frame")
+    module.save_json(
+        legacy / "manifest.json",
+        {
+            "source": "https://www.bilibili.com/video/BV1wZcVevENV/",
+            "title": "Existing",
+            "media": str(media),
+            "sha256": module.digest(media),
+            "duration": 2,
+        },
+    )
+    module.export_transcript(legacy, [{"id": "s1", "start": 0, "end": 2, "text": "private speech"}], True)
+    module.save_json(legacy / "frames/index.json", [{"id": "f1", "time": 1, "path": str(frame)}])
+    module.save_json(
+        legacy / "outline.json",
+        {
+            "title": "Existing",
+            "children": [{"title": "Claim", "body": "Own explanation", "evidence": ["f1"]}],
+        },
+    )
+    args = SimpleNamespace(directory=str(legacy), library=str(tmp_path / "library"))
+    task = module.adopt_task(args)
+    copied_media = Path(module.read_json(task / "work/manifest.json")["media"])
+    copied_frame = Path(module.read_json(task / "work/frames/index.json")[0]["path"])
+    assert copied_media.is_relative_to(task / "work")
+    assert copied_media.read_bytes() == media.read_bytes()
+    assert copied_frame.is_relative_to(task / "work")
+    assert copied_frame.read_bytes() == frame.read_bytes()
+    assert module.read_json(legacy / "manifest.json")["media"] == str(media)
+    assert module.read_json(legacy / "frames/index.json")[0]["path"] == str(frame)
+    (task / "work/outline.json").write_text('{"kept": true}')
+    assert module.adopt_task(args) == task
+    assert module.read_json(task / "work/outline.json") == {"kept": True}
+    assert "work/transcript.txt" in (task / "index.html").read_text()
+
+
+def test_adopt_rejects_changed_media_without_publishing_task(tmp_path):
+    media = tmp_path / "media.m4a"
+    media.write_bytes(b"changed")
+    legacy = tmp_path / "legacy"
+    module.save_json(
+        legacy / "manifest.json", {"source": "BV1wZcVevENV", "media": str(media), "sha256": "old"}
+    )
+    module.export_transcript(legacy, [{"id": "s1", "start": 0, "end": 2, "text": "private"}], True)
+    with pytest.raises(module.WorkflowError):
+        module.adopt_task(SimpleNamespace(directory=str(legacy), library=str(tmp_path / "library")))
+    assert not list((tmp_path / "library").glob("tasks/*/*/task.json"))
+    assert not list((tmp_path / "library").glob("tasks/*/*/.import-*"))
 
 
 def test_detailed_reader_preserves_prose_without_exporting_raw_transcript(tmp_path):

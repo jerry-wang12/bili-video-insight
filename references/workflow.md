@@ -15,15 +15,15 @@ uv run --no-sync python scripts/bili_insight.py doctor
 
 ## 统一入口与资料库
 
-日常优先使用 `./bili run SOURCE [--mode video]`；完整例子、目录规则与 FAQ 见 [README.md](../README.md)。默认资料库是 `~/Documents/Bili-Video-Insight/`，可由 `BILI_INSIGHT_HOME` 或 `--library` 覆盖。`run` 到材料就绪即结束，不能替代语义分析。
+日常优先使用 `./bili run SOURCE [--mode video]`；完整例子、目录规则与 FAQ 见 [README.md](../README.md)。默认资料库是本项目的 `data/`（整个目录被 Git 忽略），统一查阅入口为 `data/index.html`，可由 `BILI_INSIGHT_HOME` 或 `--library` 覆盖。`run` 到材料就绪即结束，不能替代语义分析。
 
 资料库任务在 `<资料库>/tasks/<来源ID>/<参数摘要>/`，证据与分析包在 `work/`；Codex 读取全部材料并写入 `work/outline.json`，再 `./bili finish TASK_DIR` 导出到 `outputs/`。`./bili list` 更新离线索引，`./bili bundle TASK_DIR` 只打包白名单中的分析导出与阅读页。重复运行复用相同设置；参数变化或 `--new` 创建独立任务。任务状态及错误写入 `task.json`。
 
-资料库任务共享 `cache/models/`。以下低层命令仍使用独立 `--out` 目录，其模型缓存默认位于该目录，也可以用 `transcribe --model-cache` 指定共享缓存；独立目录不自动列入资料库。
+资料库任务共享 `cache/models/`。以下低层命令仍使用独立 `--out` 目录，其模型缓存默认位于该目录，也可以用 `transcribe --model-cache` 指定共享缓存；独立目录不自动列入资料库；用户要求统一存放时用 `./bili adopt LEGACY_DIR` 接入完整转写，然后对实际打印的任务目录执行 finish。adopt 保留原目录并校验、复制媒体与采样画面，更新路径，不重新下载或转写。
 
 ## 低层命令
 
-`RUN_DIR` 是用户任务的独立工作目录，不是仓库；`SKILL_DIR` 是 Skill 目录。shell 变量不覆盖 HOME 或 CODEX_HOME。
+`RUN_DIR` 是任务的独立工作目录，可位于项目的 `data/` 内或仓库外；`SKILL_DIR` 是 Skill 目录。shell 变量不覆盖 HOME 或 CODEX_HOME。
 
 ```bash
 cd "$SKILL_DIR"

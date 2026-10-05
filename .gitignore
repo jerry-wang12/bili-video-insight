@@ -5,6 +5,7 @@ __pycache__/
 work/
 runs/
 outputs/
+/data/
 .env*
 cookies*
 *.part

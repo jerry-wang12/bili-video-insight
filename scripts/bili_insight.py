@@ -29,8 +29,9 @@ class WorkflowError(Exception):
 
 def output_directory(value):
     directory = Path(value).expanduser().resolve()
-    if directory.is_relative_to(Path(__file__).resolve().parents[1]):
-        raise WorkflowError("运行数据不能写入 Skill 仓库；请指定独立的 --out 目录")
+    project = Path(__file__).resolve().parents[1]
+    if directory.is_relative_to(project) and not directory.is_relative_to(project / "data"):
+        raise WorkflowError("仓库内运行数据仅允许存入被 Git 忽略的 data/；也可指定仓库外目录")
     return directory
 
 
@@ -776,7 +777,7 @@ summary{{cursor:pointer;font-weight:650}}p{{white-space:pre-wrap;margin:8px 0}}s
 # High-level library workflow; low-level commands retain their existing --out contract.
 def library_directory(value=None):
     return output_directory(
-        value or os.environ.get("BILI_INSIGHT_HOME") or Path.home() / "Documents/Bili-Video-Insight"
+        value or os.environ.get("BILI_INSIGHT_HOME") or Path(__file__).resolve().parents[1] / "data"
     )
 
 
@@ -784,42 +785,113 @@ def library_index(root):
     root = library_directory(root)
     root.mkdir(parents=True, exist_ok=True)
     rows = []
+    css = (Path(__file__).resolve().parents[1] / "assets/library.css").read_text(encoding="utf-8")
+
+    def page(title, body):
+        return (
+            '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f"<title>{html.escape(title)}</title><style>{css}</style></head>"
+            f"<body><main>{body}</main></body></html>"
+        )
+
+    def link(label, url, primary=False):
+        return (
+            f'<a href="{html.escape(url)}"'
+            + (' class="primary"' if primary else "")
+            + f">{html.escape(label)}</a>"
+        )
+
+    labels = {
+        "processing": "处理中",
+        "awaiting_analysis": "材料就绪，待分析",
+        "completed": "分析已导出",
+        "blocked": "遇到阻碍",
+    }
     for path in sorted((root / "tasks").glob("*/*/task.json"), reverse=True):
         task = read_json(path)
         directory = path.parent
         title = task.get("title") or task["source_id"]
-        status = task["status"]
-        links = [("任务详情", "index.html")]
-        for name in (
-            "reading.html",
-            "outline.md",
-            "segments.md",
-            "mindmap.html",
-            "mindmap.mm",
-            "deliverables.zip",
+        status = labels.get(task["status"], task["status"])
+        links = []
+        for label, name in (
+            ("阅读解读", "reading.html"),
+            ("主题脑图", "mindmap.html"),
+            ("详细解读", "outline.md"),
+            ("分段释义", "segments.md"),
+            ("可编辑脑图", "mindmap.mm"),
+            ("复核记录", "review.md"),
+            ("下载交付包", "deliverables.zip"),
         ):
             if (directory / "outputs" / name).is_file():
-                links.append((name, "outputs/" + name))
-        navigation = " · ".join(
-            f'<a href="{html.escape(url)}">{html.escape(label)}</a>' for label, url in links
+                links.append((label, "outputs/" + name))
+        navigation = "".join(link(label, url, label == "阅读解读") for label, url in links)
+        materials = []
+        for label, name in (
+            ("原始语音识别稿 · TXT", "transcript.txt"),
+            ("带时间轴识别稿 · SRT", "transcript.srt"),
+            ("结构化识别记录 · JSON", "transcript.json"),
+            ("采样画面索引", "frames/index.json"),
+        ):
+            if (directory / "work" / name).is_file():
+                materials.append("<li>" + link(label, "work/" + name) + "</li>")
+        manifest = directory / "work/manifest.json"
+        if manifest.is_file():
+            media = Path(read_json(manifest).get("media", ""))
+            if media.is_file() and media.is_relative_to(directory):
+                materials.append(
+                    "<li>" + link("本地音视频素材", media.relative_to(directory).as_posix()) + "</li>"
+                )
+        extras = []
+        known = {url.removeprefix("outputs/") for _, url in links} | {"mindmap.md"}
+        for file in sorted((directory / "outputs").glob("*")):
+            if (
+                file.is_file()
+                and file.name not in known
+                and file.suffix.lower() in {".png", ".jpg", ".jpeg", ".txt", ".md"}
+            ):
+                extras.append("<li>" + link(file.name, "outputs/" + file.name) + "</li>")
+        supplemental = (
+            '<details class="group"><summary>补充产物</summary><ul>' + "".join(extras) + "</ul></details>"
+            if extras
+            else ""
         )
-        error = f"<p>{html.escape(task['error'])}</p>" if task.get("error") else ""
+        error = f'<p class="error">{html.escape(task["error"])}</p>' if task.get("error") else ""
         (directory / "index.html").write_text(
-            f'<!doctype html><meta charset="utf-8"><title>{html.escape(title)}</title>'
-            f"<h1>{html.escape(title)}</h1><p>状态：{html.escape(status)}</p>{error}"
-            f"<p>{navigation}</p><p>分析材料：work/analysis-packets；原始转写：work/transcript.txt；"
-            "中间文件与媒体保留在 work/。交付文件在 outputs/。</p>",
+            page(
+                title,
+                link("← 所有视频", "../../../index.html")
+                + f"<h1>{html.escape(title)}</h1>"
+                + f'<p class="meta"><span class="status">{html.escape(status)}</span>{html.escape(task["created_at"])}</p>'
+                + error
+                + '<div class="actions">'
+                + navigation
+                + "</div>"
+                + '<section class="group"><h2>原始材料</h2><p class="muted">语音识别稿可能有错字，与整理后的释义、解读分别保存。</p><ul>'
+                + "".join(materials)
+                + "</ul></section>"
+                + supplemental
+                + '<p class="muted">原始材料与分析源文件在 work/，阅读和分享产物在 outputs/。分析已导出不代表内容已全部校勘。</p>',
+            ),
             encoding="utf-8",
         )
         url = directory.relative_to(root).as_posix() + "/index.html"
+        reading = directory.relative_to(root).as_posix() + "/outputs/reading.html"
+        primary = link("开始阅读", reading, True) if (directory / "outputs/reading.html").is_file() else ""
         rows.append(
-            f'<li><a href="{html.escape(url)}">{html.escape(title)}</a> — {html.escape(status)}'
-            f" <small>{html.escape(task['created_at'])}</small></li>"
+            f'<li class="task"><h2>{link(title, url)}</h2><p class="meta"><span class="status">{html.escape(status)}</span>'
+            f'{html.escape(task["created_at"])}</p><div class="actions">{primary}{link("全部产物与原文识别稿", url)}</div></li>'
         )
     (root / "index.html").write_text(
-        '<!doctype html><meta charset="utf-8"><title>视频分析资料库</title>'
-        "<h1>视频分析资料库</h1><p>awaiting_analysis：转写已就绪，等待内容分析；"
-        "completed：大纲已渲染，仍需内容核对；blocked：查看任务错误。</p><ul>" + "".join(rows) + "</ul>",
+        page(
+            "视频分析资料库",
+            '<h1>视频分析资料库</h1><p class="muted">从这里查阅所有视频的解读、脑图与原始识别材料。</p>'
+            + (
+                '<ul class="tasks">' + "".join(rows) + "</ul>"
+                if rows
+                else '<p class="empty">暂无任务。在项目目录运行 <code>./bili run 视频链接</code> 开始。</p>'
+            ),
+        ),
         encoding="utf-8",
     )
     print(f"资料库：{root / 'index.html'}")
@@ -912,6 +984,120 @@ def run_task(args):
         print(f"完成分析后：./bili finish '{directory}'")
 
 
+def adopt_task(args):
+    """Copy a completed legacy run into the library without reacquiring material."""
+    legacy = Path(args.directory).expanduser().resolve()
+    manifest = read_json(legacy / "manifest.json")
+    transcript = read_json(legacy / "transcript.json")
+    if not transcript.get("complete"):
+        raise WorkflowError("adopt 需要已完成的转写；请先完成原目录的 transcribe")
+    source = manifest["source"]
+    match = re.search(r"BV[0-9A-Za-z]{10}", source)
+    source_id = match.group() if match else "import-" + hashlib.sha256(source.encode()).hexdigest()[:12]
+    root = library_directory(args.library)
+    version = "imported-" + hashlib.sha256(str(legacy).encode()).hexdigest()[:12]
+    directory = root / "tasks" / source_id / version
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / ".lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise WorkflowError("同一任务正在接入；请等待其完成") from exc
+        if (directory / "task.json").is_file():
+            print(f"已接入，保留现有分析：{directory}")
+            library_index(root)
+            return directory
+        stage = directory / (".import-" + uuid.uuid4().hex[:8])
+        stage.mkdir()
+        try:
+            for name in (
+                "manifest.json",
+                "transcript.json",
+                "transcript.txt",
+                "transcript.srt",
+                "asr-status.json",
+                "ocr.json",
+            ):
+                if (legacy / name).is_file():
+                    shutil.copy2(legacy / name, stage / name)
+            for file in legacy.glob("outline*.json"):
+                shutil.copy2(file, stage / file.name)
+            for name in ("asr-chunks", "analysis-packets"):
+                if (legacy / name).is_dir():
+                    shutil.copytree(legacy / name, stage / name)
+            media = Path(manifest["media"])
+            if not media.is_absolute():
+                media = legacy / media
+            if media.suffix.lower() not in {
+                ".mp4",
+                ".m4a",
+                ".mp3",
+                ".wav",
+                ".webm",
+                ".flv",
+                ".mov",
+                ".mkv",
+                ".ogg",
+                ".flac",
+                ".opus",
+                ".avi",
+                ".m4v",
+                ".aac",
+            }:
+                raise WorkflowError("manifest 中的媒体扩展名不受支持")
+            if not media.is_file() or digest(media) != manifest["sha256"]:
+                raise WorkflowError("原媒体不存在或校验和不一致；停止接入，不重新下载")
+            media_name = "media" + media.suffix.lower()
+            shutil.copy2(media, stage / media_name)
+            manifest["media"] = str(directory / "work" / media_name)
+            save_json(stage / "manifest.json", manifest)
+            frame_index = legacy / "frames/index.json"
+            frame_paths = {}
+            if frame_index.is_file():
+                frames_data = read_json(frame_index)
+                for frame in frames_data:
+                    if not re.fullmatch(r"[A-Za-z0-9_-]+", frame["id"]):
+                        raise WorkflowError("画面 ID 无效")
+                    path = Path(frame["path"])
+                    if not path.is_absolute():
+                        path = legacy / path
+                    if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"} or not path.is_file():
+                        raise WorkflowError("原采样画面缺失或格式不支持；停止接入")
+                    name = frame["id"] + path.suffix.lower()
+                    (stage / "frames").mkdir(exist_ok=True)
+                    shutil.copy2(path, stage / "frames" / name)
+                    frame["path"] = str(directory / "work/frames" / name)
+                    frame_paths[frame["id"]] = frame["path"]
+                save_json(stage / "frames/index.json", frames_data)
+            if (stage / "ocr.json").is_file():
+                ocr_data = read_json(stage / "ocr.json")
+                for row in ocr_data:
+                    if row.get("id") in frame_paths:
+                        row["path"] = frame_paths[row["id"]]
+                save_json(stage / "ocr.json", ocr_data)
+            stage.replace(directory / "work")
+            save_json(
+                directory / "task.json",
+                {
+                    "schema_version": 1,
+                    "source_id": source_id,
+                    "settings": {"source": source, "imported": True},
+                    "title": manifest.get("title", source_id),
+                    "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                    "status": "awaiting_analysis",
+                    "adopted_from": str(legacy),
+                    "error": None,
+                },
+            )
+        except Exception:
+            if stage.exists():
+                shutil.rmtree(stage)
+            raise
+    library_index(root)
+    print(f"已接入：{directory}\n已有 work/outline.json 时，执行 ./bili finish '{directory}'。")
+    return directory
+
+
 def managed_task(value):
     directory = output_directory(value)
     if directory.parents[1].name != "tasks" or not (directory / "task.json").is_file():
@@ -985,6 +1171,10 @@ def parser():
     listing = commands.add_parser("list", help="重建并显示离线资料库索引")
     listing.add_argument("--library")
     listing.set_defaults(func=lambda args: library_index(library_directory(args.library)))
+    adoption = commands.add_parser("adopt", help="接入已有完整转写的低层目录，不重新下载或转写")
+    adoption.add_argument("directory", help="包含 manifest.json 与完整 transcript.json 的现有目录")
+    adoption.add_argument("--library")
+    adoption.set_defaults(func=adopt_task)
     for name, function in (("finish", finish_task), ("bundle", bundle_task)):
         child = commands.add_parser(name)
         child.add_argument("task", help="run 输出的任务目录（包含 task.json）")
@@ -998,7 +1188,7 @@ def parser():
         ("render", render),
     ):
         child = commands.add_parser(name)
-        child.add_argument("--out", required=True, help="独立运行目录；不要存入待发布仓库")
+        child.add_argument("--out", required=True, help="项目 data/ 内或仓库外的独立运行目录")
         child.set_defaults(func=function)
         if name in {"fetch", "import-media"}:
             child.add_argument("source")
