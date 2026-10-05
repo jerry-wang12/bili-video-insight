@@ -79,7 +79,7 @@ Codex 生成大纲后，手动导出或打包也很简单：
 ./bili list
 ```
 
-`finish` 验证完整转写和大纲证据 ID 后导出四种文件；`bundle` 只打包这四种交付物。`list` 重建离线目录页并打印路径。macOS 打开默认资料库：
+`finish` 验证完整转写、大纲证据和分段时间后导出大纲、脑图与阅读页；`bundle` 按白名单打包这些交付物。`list` 重建离线目录页并打印路径。macOS 打开默认资料库：
 
 ```bash
 open ~/Documents/Bili-Video-Insight/index.html
@@ -105,16 +105,19 @@ Bili-Video-Insight/
             │   ├── frames/
             │   └── outline.json     # Codex 撰写、有证据引用的分析源文件
             └── outputs/             # 查阅与分享的交付区
-                ├── outline.md       # 带时间点的文字大纲
+                ├── outline.md       # 带时间点的文字大纲与详细解释
                 ├── mindmap.md       # 可编辑 Markdown 脑图
                 ├── mindmap.mm       # FreeMind 格式，可导入兼容软件
                 ├── mindmap.html     # 离线展开/收起，支持浏览器打印
-                └── deliverables.zip # bundle 生成的四文件交付包
+                ├── reading.html     # 详细解读 / 分段释义 / 复核记录，可搜索
+                ├── segments.md      # 有 timeline 时生成；自己的话释义，不是原文
+                ├── review.md        # 有 review 时生成；勘误、来源与理解限定
+                └── deliverables.zip # bundle 生成的分析交付包
 ```
 
 规则：
 
-1. **查阅先打开资料库 `index.html`**，再进入任务；长标题不参与目录命名。
+1. **查阅先打开资料库 `index.html`**，再进入任务的 `reading.html`；长标题不参与目录命名。
 2. **分享用 `outputs/deliverables.zip`**；原始转写、媒体、凭据和模型不进入交付包。完整转写仅留在 `work/`，其交付仍受材料权限和适用内容规则约束。
 3. 相同来源、模型、语言、模式、抽帧间隔与清晰度复用同一任务；参数变化产生新目录。短链接按输入 URL 标识，不保证与 BV号合并。`--new` 强制新建版本，旧任务保留。
 4. `processing` 为处理中；`blocked` 表示失败；`awaiting_analysis` 为材料就绪、待分析；`completed` 为大纲已验证并渲染，仍需核对内容准确性。
@@ -151,9 +154,17 @@ flowchart TD
 - **语音识别**：faster-whisper 默认 `small`、CPU int8，按 600 秒分块；保存绝对时间和稳定证据编号，已完成块可恢复。
 - **画面分析**：FFmpeg 采样，Codex 逐帧核对；Tesseract OCR 可选。采样不能保证覆盖全部画面文字。
 - **语义整理**：依据全部分析包组织论点、推理、例子与结论；每个叶节点至少引用一个真实转写或画面 ID。ID 校验只证明引用存在，不能证明解释正确。
-- **导出与查阅**：所有主题保留到文字与脑图文件，任务页及资料库索引不依赖服务器或 CDN。
+- **导出与查阅**：所有主题保留到文字与脑图文件，FreeMind 正文存入节点备注。`reading.html` 提供详细解读、可选分段释义与复核记录，可切换视图和检索；脑图用于主题导航。任务页及资料库索引不依赖服务器或 CDN。
 
 参考 [Bili-Insight](https://github.com/2951121599/Bili-Insight) 的「材料 → 总结 → 可视化」思路。本项目自行实现音轨转写、关键帧证据与本地资料库；未复制其代码。
+
+### 输出可以有多详细？
+
+脑图用于看结构，详细解读用于看论证。用户要求深读时，Codex 应交代主要结论如何得到，保留视频实际使用的案例、限定与前后连接，而非每个节点只写一句话；不凭空补齐视频没有解释的细节。
+
+`outline.json` 的节点正文支持多段文字；可选 `timeline` 保存按时间范围撰写的释义，`review` 保存复核记录。格式见 [分析深度与阅读产物](references/analysis-depth.md)。脚本只检查格式、证据和时间，分析深度与正确性仍由内容阅读及核对保证。
+
+原始 ASR 已在 `work/transcript.txt/.srt/.json` 按时间保存；它是机器识别记录。`segments.md` 是另外撰写的释义，不能冒充作者原稿。涉及完整逐字稿交付时，按素材来源与适用权限判断。
 
 ## 恢复与常见问题
 

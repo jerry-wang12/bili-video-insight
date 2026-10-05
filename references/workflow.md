@@ -17,7 +17,7 @@ uv run --no-sync python scripts/bili_insight.py doctor
 
 日常优先使用 `./bili run SOURCE [--mode video]`；完整例子、目录规则与 FAQ 见 [README.md](../README.md)。默认资料库是 `~/Documents/Bili-Video-Insight/`，可由 `BILI_INSIGHT_HOME` 或 `--library` 覆盖。`run` 到材料就绪即结束，不能替代语义分析。
 
-资料库任务在 `<资料库>/tasks/<来源ID>/<参数摘要>/`，证据与分析包在 `work/`；Codex 读取全部材料并写入 `work/outline.json`，再 `./bili finish TASK_DIR` 导出到 `outputs/`。`./bili list` 更新离线索引，`./bili bundle TASK_DIR` 只打包四种交付物。重复运行复用相同设置；参数变化或 `--new` 创建独立任务。任务状态及错误写入 `task.json`。
+资料库任务在 `<资料库>/tasks/<来源ID>/<参数摘要>/`，证据与分析包在 `work/`；Codex 读取全部材料并写入 `work/outline.json`，再 `./bili finish TASK_DIR` 导出到 `outputs/`。`./bili list` 更新离线索引，`./bili bundle TASK_DIR` 只打包白名单中的分析导出与阅读页。重复运行复用相同设置；参数变化或 `--new` 创建独立任务。任务状态及错误写入 `task.json`。
 
 资料库任务共享 `cache/models/`。以下低层命令仍使用独立 `--out` 目录，其模型缓存默认位于该目录，也可以用 `transcribe --model-cache` 指定共享缓存；独立目录不自动列入资料库。
 
@@ -52,6 +52,8 @@ uv run --no-sync python scripts/bili_insight.py ocr --out "$RUN_DIR" --language 
 - `analysis-packets/*.md`：分组的可读材料，必须全部读取。无语音块可为空，不补造内容。
 - `frames/index.json`、`ocr.json`：采样时间与证据。OCR 初始 `verified: false`。
 - `outline.json`：Codex 根据证据撰写的语义分析，不由脚本凭简介伪造。
+- `reading.html`：可搜索并切换详细解读、分段释义和复核记录；后两者取决于分析 JSON 的可选字段。
+- `segments.md`、`review.md`：可选的时间释义与复核记录，不是逐字稿。
 - `outline.md`、`mindmap.md/.mm/.html`：渲染产物。HTML 离线可折叠，可浏览器打印；FreeMind 可导入兼容软件。
 
 下载、ASR 设置或媒体校验和冲突时选新运行目录。每块独立识别，边界附近可能断句，核对相邻段修正。原始媒体保留；本地导入只引用路径，不复制。下载失败状态是 `blocked`，不能称为完成。

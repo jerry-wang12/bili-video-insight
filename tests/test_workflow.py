@@ -269,9 +269,64 @@ def test_library_finish_and_bundle_only_exports(tmp_path):
     (directory / "outputs" / "cookies.txt").write_text("sensitive")
     module.bundle_task(args)
     with zipfile.ZipFile(directory / "outputs" / "deliverables.zip") as archive:
-        assert set(archive.namelist()) == {"outline.md", "mindmap.md", "mindmap.mm", "mindmap.html"}
+        assert set(archive.namelist()) == {
+            "outline.md",
+            "mindmap.md",
+            "mindmap.mm",
+            "mindmap.html",
+            "reading.html",
+        }
     assert module.read_json(directory / "task.json")["status"] == "completed"
     assert "outputs/mindmap.html" in (directory / "index.html").read_text()
 
     module.finish_task(args)
     assert not (directory / "outputs" / "deliverables.zip").exists()
+
+
+def test_detailed_reader_preserves_prose_without_exporting_raw_transcript(tmp_path):
+    module.export_transcript(
+        tmp_path, [{"id": "s1", "start": 0, "end": 2, "text": "PRIVATE RAW SPEECH"}], True
+    )
+    data = {
+        "title": "Reader",
+        "notice": "<img src=x onerror=alert(1)>",
+        "review": "Own note [Primary](https://example.org/primary).",
+        "children": [
+            {"title": "Topic", "body": "First explanation.\n\nSecond explanation.", "evidence": ["s1"]}
+        ],
+        "timeline": [
+            {"title": "Paraphrase", "body": "My own summary <&>", "start": 0, "end": 2, "evidence": ["s1"]}
+        ],
+    }
+    source = tmp_path / "outline.json"
+    module.save_json(source, data)
+    module.render(SimpleNamespace(out=str(tmp_path), outline=str(source)))
+    page = (tmp_path / "reading.html").read_text()
+    assert "<p>First explanation.</p><p>Second explanation.</p>" in page
+    assert "PRIVATE RAW SPEECH" not in page
+    assert "<img src=x" not in page
+    assert "My own summary &lt;&amp;&gt;" in page
+    assert "My own summary <&>" in (tmp_path / "segments.md").read_text()
+    assert '<a href="https://example.org/primary">Primary</a>' in page
+    assert "Own note" in (tmp_path / "review.md").read_text()
+    assert (
+        "Second explanation." in ET.parse(tmp_path / "mindmap.mm").find(".//richcontent/html/body/p[2]").text
+    )
+    data.pop("timeline")
+    data.pop("review")
+    module.save_json(source, data)
+    module.render(SimpleNamespace(out=str(tmp_path), outline=str(source)))
+    assert not (tmp_path / "segments.md").exists()
+    assert not (tmp_path / "review.md").exists()
+
+
+@pytest.mark.parametrize(
+    "start,end,ids",
+    [(2, 1, ["s1"]), (0, float("inf"), ["s1"]), (0, 2, []), (0, 2, ["unknown"]), (2, 3, ["s1"])],
+)
+def test_timeline_requires_valid_times_and_matching_evidence(start, end, ids):
+    data = {
+        "timeline": [{"title": "Claim", "body": "Paraphrase", "start": start, "end": end, "evidence": ids}]
+    }
+    with pytest.raises(module.WorkflowError):
+        module.validate_timeline(data, {"s1": {"start": 0, "end": 1}}, 5)
