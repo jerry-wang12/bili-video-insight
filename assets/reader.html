@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>$title</title><style>$css</style></head><body>
+<a class="skip-link" href="#main">跳到正文</a>
+<div class="shell"><header class="masthead"><h1>$display_title</h1>$lede$source</header>
+<div class="layout"><aside><h2 id="toc-label">章节</h2><nav id="toc" class="toc" aria-label="章节导航">$navigation</nav>
+<details class="downloads"><summary>下载阅读材料</summary><a href="outline.md" download>详细解读</a>$segment_link<a href="mindmap.mm" download>可编辑脑图</a></details></aside>
+<main id="main"><div class="toolbar" aria-label="阅读视图"><button type="button" data-view="notes" aria-pressed="true">详细解读</button>$timeline_button<a href="mindmap.html">主题脑图 ↗</a>
+<label class="search"><input id="search" type="search" aria-label="搜索阅读内容" placeholder="搜索概念、论证或例子"></label></div>
+<p id="empty" role="status" hidden>没有匹配的内容，试试其他关键词。</p>
+<div id="notes">$chapters</div><div id="timeline" hidden><h2 class="view-heading">分段阅读</h2><p class="view-caption">按播放顺序整理的分段释义。</p>$timeline</div>
+<details class="method"><summary>说明与复核</summary><div class="method-content">$method</div></details>
+</main></div></div><script>$js</script></body></html>

@@ -438,6 +438,9 @@ def validate_outline(data, evidence):
         raise WorkflowError("大纲需要非空 title")
     if not isinstance(data.get("children"), list) or not data["children"]:
         raise WorkflowError("大纲需要非空 children 数组")
+    for key in ("display_title", "lede"):
+        if key in data and not isinstance(data[key], str):
+            raise WorkflowError(f"{key} 必须为字符串")
 
     def visit(node, depth):
         if depth > 12 or not isinstance(node, dict):
@@ -454,6 +457,17 @@ def validate_outline(data, evidence):
             raise WorkflowError("每个叶节点必须引用至少一个转写或画面 evidence ID")
         if "body" in node and not isinstance(node["body"], str):
             raise WorkflowError("body 必须为字符串")
+        for key in ("nav_title", "display_title", "time_label", "focus", "takeaway"):
+            if key in node and not isinstance(node[key], str):
+                raise WorkflowError(f"{key} 必须为字符串")
+        for key in ("sequence", "emphasis"):
+            if key in node and (
+                not isinstance(node[key], list)
+                or any(not isinstance(value, str) or not value.strip() for value in node[key])
+            ):
+                raise WorkflowError(f"{key} 必须为非空字符串组成的数组")
+        if "secondary" in node and not isinstance(node["secondary"], bool):
+            raise WorkflowError("secondary 必须为布尔值")
         for child in children:
             visit(child, depth + 1)
 
@@ -494,69 +508,130 @@ def validate_timeline(data, evidence, duration):
 
 
 def render_reading(out, data, evidence):
-    """Render authored explanations; never copy raw transcript text into deliverables."""
+    """Render authored prose with a quiet reader; keep source IDs in text exports."""
+    from string import Template
 
-    def paragraphs(text):
-        def inline(value):
+    def paragraphs(text, terms=()):
+        def plain(value):
+            if not terms:
+                return html.escape(value)
+            pattern = "|".join(re.escape(term) for term in sorted(set(terms), key=len, reverse=True))
             chunks, cursor = [], 0
-            for match in re.finditer(r"\[([^\]]+)\]\((https://[^\s)]+)\)", value):
+            for match in re.finditer(pattern, value):
                 chunks.append(html.escape(value[cursor : match.start()]))
-                chunks.append(f'<a href="{html.escape(match[2])}">{html.escape(match[1])}</a>')
+                chunks.append("<strong>" + html.escape(match[0]) + "</strong>")
                 cursor = match.end()
             return "".join(chunks) + html.escape(value[cursor:])
 
+        def inline(value):
+            chunks, cursor = [], 0
+            for match in re.finditer(r"\[([^\]]+)\]\((https://[^\s)]+)\)", value):
+                chunks.append(plain(value[cursor : match.start()]))
+                chunks.append(f'<a href="{html.escape(match[2])}">{plain(match[1])}</a>')
+                cursor = match.end()
+            return "".join(chunks) + plain(value[cursor:])
+
         return "".join(f"<p>{inline(p)}</p>" for p in text.split("\n\n") if p.strip())
 
-    def times(node):
+    def time_label(node):
         items = [evidence[key] for key in node.get("evidence", [])]
         points = [item.get("start", item.get("time", 0)) for item in items]
-        return f"参考时间 {timestamp(min(points))} 起 · {len(items)} 处证据" if points else "章节导读"
-
-    def references(node):
-        ids = node.get("evidence", [])
-        if not ids:
-            return ""
-        return (
-            '<details class="evidence"><summary>查看时间证据</summary><p>'
-            + html.escape(
-                ", ".join(
-                    f"{key} · {timestamp(evidence[key].get('start', evidence[key].get('time', 0)))}"
-                    for key in ids
-                )
-            )
-            + "</p></details>"
-        )
-
-    count = 0
+        return f'<span class="time">{timestamp(min(points))}</span>' if points else ""
 
     def topic(node, depth=3):
-        nonlocal count
-        count += 1
+        heading = min(depth, 6)
+        prose, supplements = [], []
+        for p in node.get("body", "").split("\n\n"):
+            (supplements if p.lstrip().startswith(("整理补充", "整理提示")) else prose).append(p)
+        supplement = (
+            (
+                '<details class="supplement"><summary>整理补充</summary>'
+                + paragraphs("\n\n".join(supplements), node.get("emphasis", []))
+                + "</details>"
+            )
+            if supplements
+            else ""
+        )
+        takeaway = (
+            ('<p class="takeaway">' + html.escape(node["takeaway"]) + "</p>") if node.get("takeaway") else ""
+        )
         return (
-            f'<article class="search-item topic"><span class="time">{times(node)}</span>'
-            f"<h{min(depth, 6)}>{html.escape(node['title'])}</h{min(depth, 6)}>"
-            + paragraphs(node.get("body", ""))
-            + references(node)
+            '<article class="search-item topic"><div class="topic-heading">'
+            f"<h{heading}>{html.escape(node.get('display_title') or node['title'])}</h{heading}>"
+            + time_label(node)
+            + "</div>"
+            + takeaway
+            + '<div class="prose">'
+            + paragraphs("\n\n".join(prose), node.get("emphasis", []))
+            + "</div>"
+            + supplement
             + "".join(topic(child, depth + 1) for child in node.get("children", []))
             + "</article>"
         )
 
     chapters, navigation = [], []
     for index, chapter in enumerate(data["children"], 1):
-        navigation.append(f'<a href="#chapter-{index}">{html.escape(chapter["title"])}</a>')
-        chapters.append(
-            f'<section id="chapter-{index}" class="chapter"><h2>{html.escape(chapter["title"])}</h2>'
-            + '<div class="intro">'
-            + paragraphs(chapter.get("body", ""))
-            + "</div>"
-            + references(chapter)
-            + (
-                "".join(topic(child) for child in chapter.get("children", []))
-                if chapter.get("children")
-                else topic(chapter)
+        navigation.append(
+            f'<a href="#chapter-{index}" aria-current="{str(index == 1).lower()}">'
+            f'<span class="nav-number">{index:02}</span><span>'
+            + html.escape(chapter.get("nav_title") or chapter["title"])
+            + "</span></a>"
+        )
+        focus = (
+            (
+                '<div class="focus"><span class="focus-label">这一章的重点</span><p>'
+                + html.escape(chapter["focus"])
+                + "</p></div>"
             )
+            if chapter.get("focus")
+            else ""
+        )
+        sequence = (
+            (
+                '<ol class="sequence" aria-label="本章分析线索">'
+                + "".join("<li>" + html.escape(item) + "</li>" for item in chapter["sequence"])
+                + "</ol>"
+            )
+            if chapter.get("sequence")
+            else ""
+        )
+        intro = (
+            (
+                '<details class="chapter-intro"><summary>展开本章导读</summary>'
+                + paragraphs(chapter["body"])
+                + "</details>"
+            )
+            if chapter.get("children") and chapter.get("body")
+            else ""
+        )
+        nodes = chapter.get("children") or [chapter]
+        primary = "".join(topic(node) for node in nodes if not node.get("secondary"))
+        secondary = "".join(topic(node) for node in nodes if node.get("secondary"))
+        background = (
+            ('<details class="background"><summary>阅读背景与限定</summary>' + secondary + "</details>")
+            if secondary
+            else ""
+        )
+        interval = (
+            ('<p class="time chapter-time">' + html.escape(chapter["time_label"]) + "</p>")
+            if chapter.get("time_label")
+            else ""
+        )
+        chapters.append(
+            f'<section id="chapter-{index}" class="chapter"><div class="chapter-overview">'
+            f'<div class="chapter-heading"><span class="chapter-number">{index:02}</span><h2>'
+            + html.escape(chapter.get("display_title") or chapter["title"])
+            + "</h2></div>"
+            + interval
+            + focus
+            + sequence
+            + intro
+            + "</div>"
+            + primary
+            + background
             + "</section>"
         )
+
     chronological, segment_md = (
         [],
         [
@@ -569,11 +644,9 @@ def render_reading(out, data, evidence):
     for index, row in enumerate(data.get("timeline", []), 1):
         interval = f"{timestamp(row['start'])}–{timestamp(row['end'])}"
         chronological.append(
-            f'<article class="search-item topic" id="segment-{index}"><span class="time">{interval}</span>'
-            f"<h3>{index:02} · {html.escape(row['title'])}</h3>"
-            + paragraphs(row["body"])
-            + references(row)
-            + "</article>"
+            f'<article class="search-item topic" id="segment-{index}"><div class="topic-heading">'
+            f'<h3>{index:02} · {html.escape(row["title"])}</h3><span class="time">{interval}</span>'
+            '</div><div class="prose">' + paragraphs(row["body"]) + "</div></article>"
         )
         segment_md.extend(
             [
@@ -594,69 +667,39 @@ def render_reading(out, data, evidence):
         (out / "review.md").write_text(f"# {data['title']} · 复核记录\n\n" + review + "\n", encoding="utf-8")
     else:
         (out / "review.md").unlink(missing_ok=True)
-    review_content = (
-        '<article class="search-item topic"><h2>复核记录与阅读提示</h2>' + paragraphs(review) + "</article>"
-    )
-    review_button = (
-        '<button type="button" data-view="review" aria-pressed="false">复核记录</button>' if review else ""
-    )
-    notice = data.get("notice") or "这是依据识别材料撰写的分析性说明，不是逐字稿；语音、术语与解释仍需核对。"
-    summary = paragraphs(data.get("summary", ""))
-    title = html.escape(data["title"])
-    timeline_button = (
-        '<button type="button" data-view="timeline" aria-pressed="false">分段释义</button>'
-        if chronological
+    notice = data.get("notice") or "依据识别材料撰写的分析性说明与分段释义，语音与解释仍需核对。"
+    source_match = re.search(r"\[([^\]]+)\]\((https://[^\s)]+)\)", data.get("summary", ""))
+    source = (
+        (
+            '<p class="source">视频来源：<a href="'
+            + html.escape(source_match[2])
+            + '">'
+            + html.escape(source_match[1])
+            + " ↗</a></p>"
+        )
+        if source_match
         else ""
     )
-    timeline_content = "".join(chronological)
-    document = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>
-<style>
-:root{{color-scheme:light;--ink:#203a30;--muted:#627568;--paper:#f7f7f1;--line:#dce3d9;--accent:#286047}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--paper);color:var(--ink);font:16px/1.9 system-ui,sans-serif}}
-a{{color:var(--accent);text-underline-offset:4px}}header{{max-width:1120px;margin:auto;padding:48px 28px 24px}}
-.eyebrow{{font-size:12px;letter-spacing:.16em;color:var(--muted)}}h1{{font-size:clamp(26px,4vw,42px);line-height:1.3;max-width:900px;margin:12px 0 20px}}
-h2{{font-size:24px;line-height:1.5}}h3{{font-size:20px;line-height:1.55;margin:10px 0 18px}}
-header p{{max-width:850px}}.notice{{font-size:13px;color:var(--muted);border-left:3px solid var(--line);padding-left:16px}}
-.toolbar{{max-width:1120px;margin:auto;padding:12px 28px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}}
-button,input{{font:inherit;border:1px solid var(--line);border-radius:8px;padding:8px 14px;background:white;color:var(--ink)}}
-button{{cursor:pointer}}button[aria-pressed=true]{{background:var(--accent);color:white;border-color:var(--accent)}}
-input{{flex:1;min-width:180px}}:focus-visible{{outline:3px solid #b48230;outline-offset:3px}}
-.layout{{max-width:1120px;margin:auto;padding:0 28px 60px;display:grid;grid-template-columns:235px minmax(0,1fr);gap:38px}}
-aside{{position:sticky;top:24px;align-self:start;font-size:13px}}aside a{{display:block;padding:10px 0;text-decoration:none;border-bottom:1px solid var(--line)}}
-.chapter{{scroll-margin-top:24px;margin-bottom:52px}}.intro{{font-size:16px;color:#496253;margin-bottom:28px}}
-.topic{{background:white;border:1px solid var(--line);border-radius:12px;padding:26px 30px;margin:18px 0;scroll-margin-top:24px}}
-.topic p{{margin:0 0 16px;overflow-wrap:anywhere}}.topic p:last-child{{margin-bottom:0}}.time{{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}}
-.evidence{{color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:12px;margin-top:20px}}
-.evidence summary{{cursor:pointer}}.evidence p{{margin-top:10px!important}}[hidden]{{display:none!important}}
-#empty{{padding:24px;background:white}}.stats{{font-size:13px;color:var(--muted)}}
-@media(max-width:760px){{header{{padding-top:28px}}.layout{{grid-template-columns:1fr;gap:16px}}aside{{position:static}}
-aside a{{padding:6px 0}}.topic{{padding:20px}}}}
-@media print{{.toolbar,aside,.notice{{display:none}}.layout{{display:block}}body{{background:white}}.topic{{border:0;padding:0;break-inside:avoid}}}}
-</style></head><body><header><div class="eyebrow">VIDEO READING NOTES</div><h1>{title}</h1>
-<div>{summary}</div><p class="stats">{len(data["children"])} 个章节 · {count} 个主题解读 · {len(chronological)} 段时间释义</p>
-<p class="notice">{html.escape(notice)}</p></header>
-<div class="toolbar" aria-label="阅读视图"><button type="button" data-view="notes" aria-pressed="true">详细解读</button>
-{timeline_button}{review_button}<a href="mindmap.html">主题脑图 ↗</a><label for="search">检索</label><input id="search" type="search" placeholder="搜索概念、论证或例子"></div>
-<div class="layout"><aside><strong id="toc-label">章节导航</strong><nav id="toc">{"".join(navigation)}</nav>
-<p><a href="outline.md">文字解读 .md</a>{'<a href="segments.md">分段释义 .md</a>' if chronological else ""}
-{'<a href="review.md">复核记录 .md</a>' if review else ""}<a href="mindmap.mm">可编辑脑图 .mm</a></p></aside><main>
-<div id="empty" hidden role="status">没有匹配的内容，试试其他关键词。</div>
-<div id="notes">{"".join(chapters)}</div><div id="timeline" hidden><h2>按播放顺序阅读 · 分段释义</h2>
-<p class="notice">这些段落是分析性概括，保留时间范围与证据；不是作者原文。</p>{timeline_content}</div><div id="review" hidden>{review_content}</div>
-</main></div><script>
-const buttons=[...document.querySelectorAll('[data-view]')];let active='notes';
-const search=document.getElementById('search');
-function filter(){{const query=search.value.trim().toLocaleLowerCase();let found=0;
- document.querySelectorAll('#'+active+' .search-item').forEach(card=>{{card.hidden=!!query&&!card.textContent.toLocaleLowerCase().includes(query);if(!card.hidden)found++;}});
- document.querySelectorAll('#notes .chapter').forEach(section=>{{section.hidden=active==='notes'&&!!query&&![...section.querySelectorAll('.search-item')].some(card=>!card.hidden);}});
- document.getElementById('empty').hidden=found>0;}}
-buttons.forEach(button=>button.addEventListener('click',()=>{{active=button.dataset.view;
- for(const id of ['notes','timeline','review'])document.getElementById(id).hidden=id!==active;
- buttons.forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
- document.getElementById('toc').hidden=active!=='notes';document.getElementById('toc-label').textContent=active==='notes'?'章节导航':active==='timeline'?'按时间排列':'复核与补充';filter();}}));
-search.addEventListener('input',filter);
-</script></body></html>"""
+    method = paragraphs(notice) + paragraphs(data.get("summary", ""))
+    if review:
+        method += "<h3>复核记录</h3>" + paragraphs(review) + '<a href="review.md" download>下载复核记录</a>'
+    assets = Path(__file__).resolve().parents[1] / "assets"
+    document = Template((assets / "reader.html").read_text(encoding="utf-8")).substitute(
+        title=html.escape(data["title"]),
+        display_title=html.escape(data.get("display_title") or data["title"]),
+        lede='<p class="lede">' + html.escape(data["lede"]) + "</p>" if data.get("lede") else "",
+        source=source,
+        css=(assets / "reader.css").read_text(encoding="utf-8"),
+        js=(assets / "reader.js").read_text(encoding="utf-8"),
+        navigation="".join(navigation),
+        chapters="".join(chapters),
+        timeline="".join(chronological),
+        method=method,
+        timeline_button='<button type="button" data-view="timeline" aria-pressed="false">分段阅读</button>'
+        if chronological
+        else "",
+        segment_link='<a href="segments.md" download>分段释义</a>' if chronological else "",
+    )
     (out / "reading.html").write_text(document, encoding="utf-8")
 
 

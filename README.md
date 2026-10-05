@@ -109,7 +109,7 @@ Bili-Video-Insight/
                 ├── mindmap.md       # 可编辑 Markdown 脑图
                 ├── mindmap.mm       # FreeMind 格式，可导入兼容软件
                 ├── mindmap.html     # 离线展开/收起，支持浏览器打印
-                ├── reading.html     # 详细解读 / 分段释义 / 复核记录，可搜索
+                ├── reading.html     # 详细解读 / 分段阅读，可搜索，页末折叠说明与复核
                 ├── segments.md      # 有 timeline 时生成；自己的话释义，不是原文
                 ├── review.md        # 有 review 时生成；勘误、来源与理解限定
                 └── deliverables.zip # bundle 生成的分析交付包
@@ -154,7 +154,7 @@ flowchart TD
 - **语音识别**：faster-whisper 默认 `small`、CPU int8，按 600 秒分块；保存绝对时间和稳定证据编号，已完成块可恢复。
 - **画面分析**：FFmpeg 采样，Codex 逐帧核对；Tesseract OCR 可选。采样不能保证覆盖全部画面文字。
 - **语义整理**：依据全部分析包组织论点、推理、例子与结论；每个叶节点至少引用一个真实转写或画面 ID。ID 校验只证明引用存在，不能证明解释正确。
-- **导出与查阅**：所有主题保留到文字与脑图文件，FreeMind 正文存入节点备注。`reading.html` 提供详细解读、可选分段释义与复核记录，可切换视图和检索；脑图用于主题导航。任务页及资料库索引不依赖服务器或 CDN。
+- **导出与查阅**：所有主题保留到文字与脑图文件，FreeMind 正文存入节点备注。`reading.html` 采用米白、暖灰与单一灰蓝强调色；正文用章节重点、论证线索和简短结论区分层次，支持详细解读与分段阅读切换、搜索和章节导航。原始证据编号保留在文字文件，覆盖说明与复核记录收在页末；脑图用于主题导航。任务页及资料库索引不依赖服务器或 CDN。
 
 参考 [Bili-Insight](https://github.com/2951121599/Bili-Insight) 的「材料 → 总结 → 可视化」思路。本项目自行实现音轨转写、关键帧证据与本地资料库；未复制其代码。
 
@@ -190,6 +190,8 @@ uv sync --extra asr --extra dev
 uv run --no-sync pytest
 uv run --no-sync ruff check scripts tests
 ```
+
+有 Node.js 时，可额外运行 `node tests/reader_interactions.cjs` 检查阅读页的视图切换、搜索、折叠展开和时间锚点；它使用 DOM 测试替身，不代表浏览器渲染或响应式截图验证。
 
 只发布代码、Skill、测试和文档；媒体、模型、Cookie、环境文件与用户运行材料不提交。普通更新使用 `git pull` 后重新 `uv sync --extra asr`；旧任务与原始产物保留，可用 `--new` 创建独立任务验证新版本。
 

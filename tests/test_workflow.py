@@ -330,3 +330,61 @@ def test_timeline_requires_valid_times_and_matching_evidence(start, end, ids):
     }
     with pytest.raises(module.WorkflowError):
         module.validate_timeline(data, {"s1": {"start": 0, "end": 1}}, 5)
+
+
+def test_reader_presentation_escapes_metadata_and_retains_folded_content(tmp_path):
+    module.export_transcript(
+        tmp_path, [{"id": "private-evidence-id", "start": 1, "end": 2, "text": "PRIVATE SPEECH"}], True
+    )
+    data = {
+        "title": "Reader",
+        "display_title": "<script>alert(1)</script>",
+        "lede": "<img src=x>",
+        "children": [
+            {
+                "title": "Chapter",
+                "nav_title": "Short",
+                "focus": "Main point",
+                "sequence": ["<img src=x>", "Conclusion"],
+                "children": [
+                    {
+                        "title": "Background",
+                        "body": "Preserved <concept>.\n\n整理补充：A qualification.",
+                        "emphasis": ["<concept>"],
+                        "takeaway": "<img src=x>",
+                        "secondary": True,
+                        "evidence": ["private-evidence-id"],
+                    }
+                ],
+            }
+        ],
+    }
+    source = tmp_path / "outline.json"
+    module.save_json(source, data)
+    module.render(SimpleNamespace(out=str(tmp_path), outline=str(source)))
+    page = (tmp_path / "reading.html").read_text()
+    assert "private-evidence-id" not in page
+    assert "PRIVATE SPEECH" not in page
+    assert "<img src=x>" not in page
+    assert "<script>alert(1)</script>" not in page
+    assert "Preserved <strong>&lt;concept&gt;</strong>." in page
+    assert "A qualification." in page
+    assert '<details class="background">' in page
+    assert "private-evidence-id" in (tmp_path / "outline.md").read_text()
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"display_title": []},
+        {"focus": 4},
+        {"sequence": "a"},
+        {"sequence": [""]},
+        {"emphasis": [False]},
+        {"secondary": "true"},
+    ],
+)
+def test_reader_rejects_invalid_presentation_fields(fields):
+    node = {"title": "Topic", "evidence": ["s1"], **fields}
+    with pytest.raises(module.WorkflowError):
+        module.validate_outline({"title": "Reader", "children": [node]}, {"s1": {"start": 0}})

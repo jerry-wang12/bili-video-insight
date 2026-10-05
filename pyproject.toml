@@ -1,6 +1,6 @@
 [project]
 name = "bili-video-insight"
-version = "0.3.0"
+version = "0.4.0"
 description = "Bilibili media acquisition and evidence-based video analysis helpers for Codex"
 requires-python = ">=3.10"
 dependencies = ["yt-dlp>=2025.1.26"]
