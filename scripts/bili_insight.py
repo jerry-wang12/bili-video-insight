@@ -808,30 +808,107 @@ def library_index(root):
         "completed": "分析已导出",
         "blocked": "遇到阻碍",
     }
+
+    def frame_preview(directory, title):
+        index = directory / "work/frames/index.json"
+        preview = directory / "frames.html"
+        if not index.is_file():
+            preview.unlink(missing_ok=True)
+            return "", False
+        figures, missing = [], 0
+        for frame in read_json(index):
+            path = Path(frame["path"])
+            if not path.is_absolute():
+                path = directory / "work" / path
+            path = path.resolve()
+            if (
+                not path.is_relative_to(directory)
+                or not path.is_file()
+                or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}
+            ):
+                missing += 1
+                continue
+            url = html.escape(path.relative_to(directory).as_posix())
+            time = html.escape(timestamp(frame["time"]))
+            figures.append(
+                f'<figure class="frame"><a href="{url}" target="_blank" rel="noopener">'
+                f'<img src="{url}" alt="采样画面 · {time}" loading="lazy" decoding="async">'
+                f"</a><figcaption>{time}</figcaption></figure>"
+            )
+        caption = f"{len(figures)} 张采样画面，点击缩略图打开原图。采样只覆盖选取的时间点。"
+        unavailable = (
+            f'<p class="muted">另有 {missing} 张画面缺失或不在当前任务目录，未展示。</p>' if missing else ""
+        )
+        content = (
+            '<div class="frames">' + "".join(figures) + "</div>"
+            if figures
+            else '<p class="muted">目前没有可预览的画面。</p>'
+        )
+        preview.write_text(
+            page(
+                "采样画面",
+                link("← 返回视频", "index.html")
+                + "<h1>采样画面</h1>"
+                + f'<p class="muted">{html.escape(title)}</p><p class="muted">{caption}</p>'
+                + unavailable
+                + content,
+            ),
+            encoding="utf-8",
+        )
+        inline = (
+            '<section class="group"><div class="section-heading"><h2>采样画面</h2>'
+            + link(f"查看全部 {len(figures)} 张 →", "frames.html")
+            + "</div>"
+            + '<div class="frames">'
+            + "".join(figures[:3])
+            + "</div>"
+            + unavailable
+            + "</section>"
+        )
+        return inline, True
+
     for path in sorted((root / "tasks").glob("*/*/task.json"), reverse=True):
         task = read_json(path)
         directory = path.parent
         title = task.get("title") or task["source_id"]
+        outline = directory / "work/outline.json"
+        if task["status"] == "completed" and outline.is_file():
+            title = read_json(outline).get("display_title") or title
         status = labels.get(task["status"], task["status"])
+        frame_content, has_frames = frame_preview(directory, title)
         links = []
         for label, name in (
-            ("阅读解读", "reading.html"),
+            ("阅读页", "reading.html"),
             ("主题脑图", "mindmap.html"),
-            ("详细解读", "outline.md"),
-            ("分段释义", "segments.md"),
-            ("可编辑脑图", "mindmap.mm"),
-            ("复核记录", "review.md"),
+            ("详细解读 · Markdown", "outline.md"),
+            ("分段释义 · Markdown", "segments.md"),
+            ("可编辑脑图 · FreeMind", "mindmap.mm"),
+            ("复核记录 · Markdown", "review.md"),
             ("下载交付包", "deliverables.zip"),
         ):
             if (directory / "outputs" / name).is_file():
                 links.append((label, "outputs/" + name))
-        navigation = "".join(link(label, url, label == "阅读解读") for label, url in links)
+        navigation = "".join(
+            link(label, url, label == "阅读页") for label, url in links if url.endswith(".html")
+        )
+        if has_frames:
+            navigation += link("采样画面", "frames.html")
+        downloads = "".join(
+            "<li>" + link(label, url) + "</li>" for label, url in links if not url.endswith(".html")
+        )
+        downloads = (
+            '<details class="downloads"><summary>下载文字、可编辑脑图与交付包</summary><ul>'
+            + downloads
+            + "</ul></details>"
+            if downloads
+            else ""
+        )
         materials = []
         for label, name in (
             ("原始语音识别稿 · TXT", "transcript.txt"),
             ("带时间轴识别稿 · SRT", "transcript.srt"),
             ("结构化识别记录 · JSON", "transcript.json"),
-            ("采样画面索引", "frames/index.json"),
+            ("采样索引 · JSON", "frames/index.json"),
         ):
             if (directory / "work" / name).is_file():
                 materials.append("<li>" + link(label, "work/" + name) + "</li>")
@@ -867,6 +944,8 @@ def library_index(root):
                 + '<div class="actions">'
                 + navigation
                 + "</div>"
+                + downloads
+                + frame_content
                 + '<section class="group"><h2>原始材料</h2><p class="muted">语音识别稿可能有错字，与整理后的释义、解读分别保存。</p><ul>'
                 + "".join(materials)
                 + "</ul></section>"
@@ -880,7 +959,7 @@ def library_index(root):
         primary = link("开始阅读", reading, True) if (directory / "outputs/reading.html").is_file() else ""
         rows.append(
             f'<li class="task"><h2>{link(title, url)}</h2><p class="meta"><span class="status">{html.escape(status)}</span>'
-            f'{html.escape(task["created_at"])}</p><div class="actions">{primary}{link("全部产物与原文识别稿", url)}</div></li>'
+            f'{html.escape(task["created_at"])}</p><div class="actions">{primary}{link("全部产物与原始转写", url)}</div></li>'
         )
     (root / "index.html").write_text(
         page(

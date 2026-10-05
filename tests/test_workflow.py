@@ -349,6 +349,54 @@ def test_adopt_rejects_changed_media_without_publishing_task(tmp_path):
     assert not list((tmp_path / "library").glob("tasks/*/*/.import-*"))
 
 
+def test_library_renders_frame_preview_with_relative_images_and_missing_state(tmp_path):
+    task = tmp_path / "tasks/BV1wZcVevENV/example"
+    module.save_json(
+        task / "task.json",
+        {
+            "status": "completed",
+            "source_id": "BV1wZcVevENV",
+            "title": "Long original title",
+            "created_at": "2026-10-05",
+        },
+    )
+    module.save_json(task / "work/outline.json", {"display_title": "Short <title>"})
+    frame = task / "work/frames/picture<&>.jpg"
+    frame.parent.mkdir()
+    frame.write_bytes(b"image fixture")
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(b"external image")
+    module.save_json(
+        task / "work/frames/index.json",
+        [
+            {"id": "f1", "time": 30, "path": str(frame)},
+            {"id": "f2", "time": 60, "path": str(task / "work/frames/missing.jpg")},
+            {"id": "f3", "time": 90, "path": str(outside)},
+        ],
+    )
+    outputs = task / "outputs"
+    outputs.mkdir()
+    (outputs / "reading.html").write_text("Own explanation")
+    (outputs / "outline.md").write_text("Own explanation")
+    module.library_index(tmp_path)
+    gallery = (task / "frames.html").read_text()
+    home = (task / "index.html").read_text()
+    assert '<img src="work/frames/picture&lt;&amp;&gt;.jpg"' in gallery
+    assert 'alt="采样画面 · 00:00:30"' in gallery
+    assert "outside.jpg" not in gallery
+    assert "missing.jpg" not in gallery
+    assert "另有 2 张" in gallery
+    assert gallery.count("<img ") == 1
+    assert '<a href="frames.html">采样画面</a>' in home
+    assert '<a href="outputs/reading.html" class="primary">阅读页</a>' in home
+    assert "Short &lt;title&gt;" in home
+    assert '<details class="downloads">' in home
+    (task / "work/frames/index.json").unlink()
+    module.library_index(tmp_path)
+    assert not (task / "frames.html").exists()
+    assert 'href="frames.html"' not in (task / "index.html").read_text()
+
+
 def test_detailed_reader_preserves_prose_without_exporting_raw_transcript(tmp_path):
     module.export_transcript(
         tmp_path, [{"id": "s1", "start": 0, "end": 2, "text": "PRIVATE RAW SPEECH"}], True
