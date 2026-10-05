@@ -20,6 +20,12 @@
 
 案例来源：[幽灵漫游指南的《资本论》导读](https://www.bilibili.com/video/BV1wZcVevENV/)。这次整理包含详细解读、按播放顺序撰写的释义、主题脑图及关键画面；不同视频的章节数量与内容深度按材料决定。
 
+### 思维导图 · 四条主线
+
+![《资本论》导读思维导图：研究任务、政治经济学批判、价值运动与研究方法](docs/images/mindmap-xmind-overview.png)
+
+这张图由 imagegen 根据修订后的大纲生成，采用莫兰迪灰蓝色系，展示四条主线的概览。完整脑图保留全部 40 个主题，可在任务页点击“主题脑图”缩放、平移并查看节点正文；也可下载 SVG 矢量图。主题数量按视频内容决定，概览图不代替完整解读。
+
 ### 莫兰迪阅读页 · 设计参考
 
 ![莫兰迪阅读页设计参考：短章节导航、章节重点、分析线索与完整论证](docs/images/reading-morandi-design.png)
@@ -34,7 +40,7 @@
 
 两张图是原视频的实际采样画面，保留来源水印，**不是预览页截图**。任务页直接显示前 3 张缩略图，点击“采样画面”查看全部图片与时间点，点击图片打开原图。采样覆盖选取的时间点，不代表提取了全部画面文字。
 
-文档只收录这些局部示例图；视频、完整转写、模型和任务分析仍放在被 Git 忽略的 `data/`。
+文档收录脑图概览、阅读页设计参考和局部画面示例；视频、完整转写、模型和任务分析仍放在被 Git 忽略的 `data/`。
 
 ## 首次安装
 
@@ -71,6 +77,10 @@ ln -s "$PWD" ~/.codex/skills/bili-video-insight
 ```
 
 本地素材同样可以指定绝对路径。Skill 会准备材料、读取完整分析包、核对画面、撰写有证据的大纲，并运行 `finish`。图片脑图属于可选产物，完整可编辑版本始终保留。
+
+分析时会读取项目内置的 [忠实概括与中文编辑 Skill](skills/video-faithful-summary/SKILL.md)：先还原问题、判断和论据，再编辑中文，最后回看材料。它要求保留作者的判断强度、关键条件与反作用因素，把事实核查和整理补充另列；证据编号通过校验不代表语义一定正确。无需额外安装或配置模型 API。
+
+“主题脑图”是中心节点向左右展开的分支图。可以拖动、缩放，点击节点阅读正文，切换为只看主线，并下载 SVG 或在浏览器中导出 PNG。所有文字来自同一份大纲；`map_label` 可以提供简短节点标签，原有标题与正文保留在备注中。HTML 与 SVG 都离线可用；PNG 导出依赖浏览器的 Canvas 支持，失败时可保存 SVG。要 AI 制作的概览图片，可明确要求 imagegen；图片适合速览，完整分支以 SVG/HTML 和可编辑文件为准。
 
 ### 命令行：一条命令准备材料
 
@@ -130,7 +140,8 @@ bili-video-insight/data/
                 ├── outline.md       # 带时间点的文字大纲与详细解释
                 ├── mindmap.md       # 可编辑 Markdown 脑图
                 ├── mindmap.mm       # FreeMind 格式，可导入兼容软件
-                ├── mindmap.html     # 离线展开/收起，支持浏览器打印
+                ├── mindmap.html     # 中心分支脑图：缩放、平移、节点解读、PNG 导出
+                ├── mindmap.svg      # 全部节点的矢量图片，可直接保存和打印
                 ├── reading.html     # 详细解读 / 分段阅读，可搜索，页末折叠说明与复核
                 ├── segments.md      # 有 timeline 时生成；自己的话释义，不是原文
                 ├── review.md        # 有 review 时生成；勘误、来源与理解限定
@@ -180,8 +191,9 @@ flowchart TD
     C --> E[可选关键帧采样 / OCR]
     D --> F[完整分析包与时间证据]
     E --> F
-    F --> G[Codex 阅读全部材料、核对画面、整理主题]
-    G --> H[work/outline.json]
+    F --> G[Codex 阅读全部材料、核对画面]
+    G --> S[内置概括 Skill：还原论证、编辑中文、回看材料]
+    S --> H[work/outline.json]
     H --> I[finish：完整性与证据校验]
     I --> J[outputs 大纲与脑图]
     J --> K[离线资料库 / bundle 交付包]
@@ -225,10 +237,12 @@ flowchart TD
 uv sync --extra asr --extra dev
 ./bili --help
 uv run --no-sync pytest
+node tests/reader_interactions.cjs
+node tests/mindmap_interactions.cjs
 uv run --no-sync ruff check scripts tests
 ```
 
-有 Node.js 时，可额外运行 `node tests/reader_interactions.cjs` 检查阅读页的视图切换、搜索、折叠展开和时间锚点；它使用 DOM 测试替身，不代表浏览器渲染或响应式截图验证。
+有 Node.js 时，可额外运行上面的两项交互检查，覆盖阅读页的视图切换、搜索和时间锚点，以及脑图的缩放、平移、节点解读与主线切换；它们使用 DOM 测试替身，不代表浏览器渲染或响应式截图验证。
 
 只发布代码、Skill、测试和文档（含 `docs/images/` 中的案例图）；完整媒体、模型、Cookie、环境文件与用户运行材料不提交。普通更新使用 `git pull` 后重新 `uv sync --extra asr`；旧任务与原始产物保留，可用 `--new` 创建独立任务验证新版本。
 

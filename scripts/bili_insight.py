@@ -439,7 +439,7 @@ def validate_outline(data, evidence):
         raise WorkflowError("大纲需要非空 title")
     if not isinstance(data.get("children"), list) or not data["children"]:
         raise WorkflowError("大纲需要非空 children 数组")
-    for key in ("display_title", "lede"):
+    for key in ("display_title", "lede", "map_label"):
         if key in data and not isinstance(data[key], str):
             raise WorkflowError(f"{key} 必须为字符串")
 
@@ -458,7 +458,7 @@ def validate_outline(data, evidence):
             raise WorkflowError("每个叶节点必须引用至少一个转写或画面 evidence ID")
         if "body" in node and not isinstance(node["body"], str):
             raise WorkflowError("body 必须为字符串")
-        for key in ("nav_title", "display_title", "time_label", "focus", "takeaway"):
+        for key in ("nav_title", "display_title", "time_label", "focus", "takeaway", "map_label"):
             if key in node and not isinstance(node[key], str):
                 raise WorkflowError(f"{key} 必须为字符串")
         for key in ("sequence", "emphasis"):
@@ -747,29 +747,18 @@ def render(args):
             note_body = ET.SubElement(ET.SubElement(rich, "html"), "body")
             for paragraph in body.split("\n\n"):
                 ET.SubElement(note_body, "p").text = paragraph
-        contents = "".join(build(child, level + 1, child_element) for child in node.get("children", []))
-        return (
-            f"<li><details {'open' if level == 1 else ''}><summary>{html.escape(label)}</summary>"
-            f"<p>{html.escape(body)}</p><small>{html.escape(cite)}</small>"
-            + (f"<ul>{contents}</ul>" if contents else "")
-            + "</details></li>"
-        )
+        for child in node.get("children", []):
+            build(child, level + 1, child_element)
 
-    tree = "".join(build(node, 1, root_node) for node in data["children"])
+    for node in data["children"]:
+        build(node, 1, root_node)
     (out / "outline.md").write_text("\n".join(markdown), encoding="utf-8")
     (out / "mindmap.md").write_text("\n".join(mm_markdown) + "\n", encoding="utf-8")
     ET.ElementTree(root).write(out / "mindmap.mm", encoding="utf-8", xml_declaration=True)
-    document = f"""<!doctype html><html lang="zh-CN"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{html.escape(title)}</title><style>
-body{{font:16px/1.7 system-ui,sans-serif;background:#f5f5f0;color:#24352d;margin:0;padding:32px}}
-main{{max-width:1200px;margin:auto}}h1{{font-size:28px}}ul{{list-style:none;padding-left:24px;border-left:2px solid #bacabc}}
-li{{margin:12px 0}}details{{background:#fff;border:1px solid #dce4dc;border-radius:10px;padding:12px 16px}}
-summary{{cursor:pointer;font-weight:650}}p{{white-space:pre-wrap;margin:8px 0}}small{{color:#55695b}}
-@media print{{body{{background:white;padding:0}}details{{break-inside:avoid}}}}
-</style><main><h1>{html.escape(title)}</h1><p>脑图用于查看主题结构；展开节点可读解释。时间点和证据编号用于回溯。</p>
-<p><a href="reading.html">打开详细解读与分段释义 →</a></p><ul>{tree}</ul></main></html>"""
-    (out / "mindmap.html").write_text(document, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("bili_mindmap", Path(__file__).with_name("mindmap.py"))
+    mindmap = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mindmap)
+    mindmap.render(out, data, evidence)
     render_reading(out, data, evidence)
     print("已生成详细文字大纲、脑图及 reading.html；提供 timeline 时还生成 segments.md")
 
@@ -883,6 +872,8 @@ def library_index(root):
             ("详细解读 · Markdown", "outline.md"),
             ("分段释义 · Markdown", "segments.md"),
             ("可编辑脑图 · FreeMind", "mindmap.mm"),
+            ("矢量脑图 · SVG", "mindmap.svg"),
+            ("图片脑图 · 概览", "mindmap-xmind-overview.png"),
             ("复核记录 · Markdown", "review.md"),
             ("下载交付包", "deliverables.zip"),
         ):
@@ -1192,7 +1183,7 @@ def finish_task(args):
     render(argparse.Namespace(out=str(work), outline=str(work / "outline.json")))
     outputs = directory / "outputs"
     outputs.mkdir(exist_ok=True)
-    for name in ("outline.md", "mindmap.md", "mindmap.mm", "mindmap.html", "reading.html"):
+    for name in ("outline.md", "mindmap.md", "mindmap.mm", "mindmap.html", "mindmap.svg", "reading.html"):
         shutil.copy2(work / name, outputs / name)
     for name in ("segments.md", "review.md"):
         if (work / name).is_file():
@@ -1214,7 +1205,15 @@ def bundle_task(args):
     outputs = directory / "outputs"
     # Explicit allowlist: never include transcripts, media, credentials or arbitrary files.
     names = ["outline.md", "mindmap.md", "mindmap.mm", "mindmap.html"]
-    names.extend(name for name in ("reading.html", "segments.md", "review.md") if (outputs / name).is_file())
+    optional = (
+        "reading.html",
+        "segments.md",
+        "review.md",
+        "mindmap.svg",
+        "mindmap-xmind-overview.png",
+        "mindmap-xmind-prompt.txt",
+    )
+    names.extend(name for name in optional if (outputs / name).is_file())
     for name in names:
         if not (outputs / name).is_file():
             raise WorkflowError(f"缺少交付物：{name}")

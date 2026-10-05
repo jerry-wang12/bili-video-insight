@@ -65,8 +65,8 @@ def test_render_escapes_content_and_preserves_all_nodes(tmp_path):
     module.save_json(source, data)
     module.render(SimpleNamespace(out=str(tmp_path), outline=str(source)))
     page = (tmp_path / "mindmap.html").read_text()
-    assert "<script>" not in page
-    assert "&lt;script&gt;" in page
+    assert "<script>alert(1)</script>" not in page
+    assert r"\u003cscript>alert(1)\u003c/script>" in page
     assert "Claim 19" in page
     assert "00:01:02" in page
     assert len(ET.parse(tmp_path / "mindmap.mm").findall(".//node")) == 21
@@ -285,6 +285,7 @@ def test_library_finish_and_bundle_only_exports(tmp_path):
             "mindmap.md",
             "mindmap.mm",
             "mindmap.html",
+            "mindmap.svg",
             "reading.html",
         }
     assert module.read_json(directory / "task.json")["status"] == "completed"
