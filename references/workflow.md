@@ -2,7 +2,9 @@
 
 ## 安装
 
-Python 3.10+，推荐 uv。系统需要 `ffmpeg` 与 `ffprobe`。只获取媒体：
+推荐执行 `./install.sh`，自动准备 Python 环境、本地 ASR 依赖并注册 Skill；`./install.sh --check` 只检查。FFmpeg 自动安装使用 macOS 的 Homebrew 或 Linux 的 apt-get；无包管理器或权限时停止并说明条件。重复安装复用已有依赖与同项目注册，不覆盖其他 Skill。不预下载语音模型，首次分析自动下载。
+
+也可手动安装：Python 3.10+、uv、`ffmpeg` 与 `ffprobe`。只获取媒体：
 
 ```bash
 uv sync
@@ -11,11 +13,11 @@ uv run --no-sync python scripts/bili_insight.py doctor
 
 本地语音转写：`uv sync --extra asr`。默认 faster-whisper `small`、CPU int8；首次使用下载模型到运行目录 `model-cache/`。tiny 可验证管线，不适合作为中文学术长视频的最终质量保证。模型不可访问时只阻碍转写。
 
-可选 OCR 需要 `tesseract` 和 `chi_sim`、`eng` 语言包；也可由 Codex 查看关键帧。系统程序按操作系统安装，脚本不修改系统。
+可选 OCR 需要 `tesseract` 和 `chi_sim`、`eng` 语言包；也可由 Codex 查看关键帧。媒体与分析命令不修改系统；只有显式运行安装脚本才准备系统依赖。
 
 ## 统一入口与资料库
 
-日常优先使用 `./bili run SOURCE [--mode video]`；完整例子、目录规则与 FAQ 见 [README.md](../README.md)。默认资料库是本项目的 `data/`（整个目录被 Git 忽略），统一查阅入口为 `data/index.html`，可由 `BILI_INSIGHT_HOME` 或 `--library` 覆盖。`run` 到材料就绪即结束，不能替代语义分析。
+日常让 Codex 使用 Skill 分析链接，即默认完成详细解读、连续分段释义与分支脑图。新视频材料优先用 `./bili run SOURCE --mode video`；纯音频按音频模式处理，已有任务复用参数和材料。底层 `run` 命令仍默认音频模式，且只准备材料，不能替代 Codex 语义分析。完整例子、目录规则与 FAQ 见 [README.md](../README.md)。默认资料库是本项目的 `data/`（整个目录被 Git 忽略），统一查阅入口为 `data/index.html`，可由 `BILI_INSIGHT_HOME` 或 `--library` 覆盖。
 
 资料库任务在 `<资料库>/tasks/<来源ID>/<参数摘要>/`，证据与分析包在 `work/`；Codex 读取全部材料并写入 `work/outline.json`，再 `./bili finish TASK_DIR` 导出到 `outputs/`。`./bili list` 更新离线索引，`./bili bundle TASK_DIR` 只打包白名单中的分析导出与阅读页。重复运行复用相同设置；参数变化或 `--new` 创建独立任务。任务状态及错误写入 `task.json`。
 
@@ -53,8 +55,8 @@ uv run --no-sync python scripts/bili_insight.py ocr --out "$RUN_DIR" --language 
 - `frames/index.json`、`ocr.json`：采样时间与证据。OCR 初始 `verified: false`。
 - `outline.json`：Codex 根据证据撰写的语义分析，不由脚本凭简介伪造。
 - `reading.html`：可搜索并切换详细解读、分段释义和复核记录；后两者取决于分析 JSON 的可选字段。
-- `segments.md`、`review.md`：可选的时间释义与复核记录，不是逐字稿。
-- `outline.md`、`mindmap.md/.mm/.html`：渲染产物。HTML 离线可折叠，可浏览器打印；FreeMind 可导入兼容软件。
+- `segments.md`、`review.md`：时间释义与复核记录，不是逐字稿。Skill 默认撰写 timeline 以生成 segments.md；低层渲染保留可选字段兼容性。
+- `outline.md`、`mindmap.md/.mm/.html/.svg`：渲染产物。HTML 为离线中心分支脑图，可缩放、平移、查看节点解读；SVG 是完整矢量图片，FreeMind 可导入兼容软件。
 
 下载、ASR 设置或媒体校验和冲突时选新运行目录。每块独立识别，边界附近可能断句，核对相邻段修正。原始媒体保留；本地导入只引用路径，不复制。下载失败状态是 `blocked`，不能称为完成。
 

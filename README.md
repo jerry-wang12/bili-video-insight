@@ -44,39 +44,46 @@
 
 ## 首次安装
 
-需要 Python 3.10+、[uv](https://docs.astral.sh/uv/getting-started/installation/) 和 FFmpeg。macOS 可以先执行：
+克隆项目后，执行一次安装脚本：
 
 ```bash
-brew install uv ffmpeg
 mkdir -p ~/Code/skills
-cd ~/Code/skills
-git clone https://github.com/jerry-wang12/bili-video-insight.git
-cd bili-video-insight
-uv sync --extra asr
-./bili doctor
+git clone https://github.com/jerry-wang12/bili-video-insight.git ~/Code/skills/bili-video-insight
+cd ~/Code/skills/bili-video-insight
+./install.sh
 ```
 
-Linux 通过系统包管理器安装 `ffmpeg`，再执行相同的克隆和 `uv sync` 步骤。`bili` 启动器目前支持 macOS/Linux。首次转写会下载 Whisper 模型，需要联网、磁盘空间和等待时间；后续任务共用模型缓存。无需填写模型 API Key。
+脚本自动检查 FFmpeg/ffprobe、安装缺少的 uv、创建 Python 项目环境、安装本地转写依赖、运行检查并注册 Codex Skill。已有依赖会复用，已有环境的额外包会保留。新环境选择 Python 3.12，由 uv 在缺少时下载；已有项目环境继续使用原来的 Python。uv 使用 [官方安装器](https://docs.astral.sh/uv/getting-started/installation/)，不需要手动装 Python、执行 uv sync 或建立链接。
 
-安装为 Codex Skill：
+系统依赖自动安装：macOS 使用已有的 Homebrew；Debian/Ubuntu 等 Linux 使用 apt-get，可能需要输入管理员密码。缺少包管理器或权限时会说明所需条件并停止；其他 Linux 发行版可以先用自己的包管理器安装 FFmpeg。当前安装脚本与 `bili` 启动器支持 macOS/Linux。
+
+仅检查安装状态，不做安装：
 
 ```bash
-mkdir -p ~/.codex/skills
-ln -s "$PWD" ~/.codex/skills/bili-video-insight
+./install.sh --check
 ```
 
-如果目标已经存在，先检查是否已指向此项目，勿覆盖其他 Skill。重新打开 Codex 会话后使用。`./bili` 需要在项目目录执行；也可以从任何目录调用 `~/Code/skills/bili-video-insight/bili`。
+默认注册到 `~/.codex/skills/bili-video-insight`；设置了 `CODEX_HOME` 时，注册到它下面的 `skills/bili-video-insight`。已指向此项目时可重复执行；其他文件或项目占用该位置时，不会覆盖。重新打开 Codex 会话后使用。
+
+首次分析自动下载 Whisper 模型，需要联网和等待；后续任务共用缓存。无需填写转写模型 API Key。可选 OCR 及 imagegen 能力不由安装脚本配置。
+
+Skill 安装器如果只复制或链接文件，并不会自动执行依赖安装；仍须执行一次 `./install.sh`，或明确让 Codex 完成项目安装并运行该脚本。之后日常分析无需再执行安装步骤。`./bili` 在项目目录执行，也可以从任何目录调用其绝对路径。
 
 ## 日常使用
 
 ### 推荐：直接告诉 Codex
 
 ```text
-使用 $bili-video-insight 分析 https://www.bilibili.com/video/BV1wZcVevENV/，
-结合音频和关键画面生成详细文字大纲、思维导图，存入默认资料库。
+使用 $bili-video-insight 分析 https://www.bilibili.com/video/BV1wZcVevENV/
 ```
 
-本地素材同样可以指定绝对路径。Skill 会准备材料、读取完整分析包、核对画面、撰写有证据的大纲，并运行 `finish`。图片脑图属于可选产物，完整可编辑版本始终保留。
+本地素材同样可以指定绝对路径。**无需每次指定产物，普通分析默认生成：**
+
+- **详细解读**：`reading.html` 阅读页和 `outline.md`，保留论证、关键例子与章节重点。
+- **分段释义**：阅读页的“分段阅读”和 `segments.md`，按时间连续整理，方便定位回看。
+- **分支脑图**：`mindmap.html`、`mindmap.svg`，以及可编辑的 Markdown、FreeMind 文件。
+
+Skill 会准备材料、读取完整分析包、核对关键画面、撰写有证据的分析，并完成导出。视频默认结合音频与采样画面，纯音频按音频处理；已有任务复用其材料与参数。结果从资料库 `data/index.html` 查阅。明确要求“只要简短摘要”或只分析某一段时，按你的范围处理。
 
 分析时会读取项目内置的 [忠实概括与中文编辑 Skill](skills/video-faithful-summary/SKILL.md)：先还原问题、判断和论据，再编辑中文，最后回看材料。它要求保留作者的判断强度、关键条件与反作用因素，把事实核查和整理补充另列；证据编号通过校验不代表语义一定正确。无需额外安装或配置模型 API。
 
@@ -209,7 +216,7 @@ flowchart TD
 
 ### 输出可以有多详细？
 
-脑图用于看结构，详细解读用于看论证。用户要求深读时，Codex 应交代主要结论如何得到，保留视频实际使用的案例、限定与前后连接，而非每个节点只写一句话；不凭空补齐视频没有解释的细节。
+脑图用于看结构，详细解读用于看论证。普通分析默认深读，Codex 应交代主要结论如何得到，保留视频实际使用的案例、限定与前后连接，而非每个节点只写一句话；不凭空补齐视频没有解释的细节。
 
 `outline.json` 的节点正文支持多段文字；可选 `timeline` 保存按时间范围撰写的释义，`review` 保存复核记录。格式见 [分析深度与阅读产物](references/analysis-depth.md)。脚本只检查格式、证据和时间，分析深度与正确性仍由内容阅读及核对保证。
 
