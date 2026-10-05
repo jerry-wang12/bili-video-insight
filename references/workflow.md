@@ -84,4 +84,3 @@ uv run python scripts/bili_insight.py render --out "$RUN_DIR" --outline "$RUN_DI
 - [Whisper](https://github.com/openai/whisper)
 - [FFmpeg](https://ffmpeg.org/ffmpeg.html)
 - [Tesseract](https://github.com/tesseract-ocr/tesseract)
-

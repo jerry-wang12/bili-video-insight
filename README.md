@@ -46,4 +46,3 @@ uv run --extra dev ruff check scripts tests
 仅上传代码、Skill、测试与文档。运行目录、媒体、模型、Cookie、私有转写和用户数据不提交；发布前仍需检查暂存文件。无需 API Key，ASR 默认在本地执行。
 
 原创代码采用 MIT 许可，依赖遵循各自许可。对 Bili-Insight 的借鉴限于公开流程思路，未复制其代码。
-
