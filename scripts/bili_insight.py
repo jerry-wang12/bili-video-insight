@@ -22,6 +22,13 @@ class WorkflowError(Exception):
     pass
 
 
+def output_directory(value):
+    directory = Path(value).expanduser().resolve()
+    if directory.is_relative_to(Path(__file__).resolve().parents[1]):
+        raise WorkflowError("运行数据不能写入 Skill 仓库；请指定独立的 --out 目录")
+    return directory
+
+
 def save_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,7 +83,7 @@ def probe(path):
 
 
 def manifest_path(args):
-    return Path(args.out).resolve() / "manifest.json"
+    return output_directory(args.out) / "manifest.json"
 
 
 def load_manifest(args):
@@ -144,6 +151,8 @@ def fetch(args):
             raise WorkflowError("Cookie 文件不存在")
         if cookie.is_relative_to(out):
             raise WorkflowError("Cookie 文件不能放在运行输出目录")
+        if cookie.is_relative_to(Path(__file__).resolve().parents[1]):
+            raise WorkflowError("Cookie 文件不能放在 Skill 仓库")
     out.mkdir(parents=True, exist_ok=True)
     manifest = {"schema_version": 1, "source": source, "acquisition_mode": args.mode, "status": "fetching"}
     save_json(target, manifest)
@@ -549,13 +558,21 @@ def parser():
 def main():
     args = parser().parse_args()
     try:
+        if hasattr(args, "out"):
+            args.out = str(output_directory(args.out))
         args.func(args)
     except Exception as exc:  # noqa: BLE001 -- CLI boundary handles optional engine and network failures.
         if args.command == "transcribe":
-            save_json(
-                Path(args.out).resolve() / "asr-status.json",
-                {"complete": False, "status": "blocked", "error": safe_message(exc)},
-            )
+            # Only save failure state after a valid run directory has been established.
+            try:
+                directory = output_directory(args.out)
+            except WorkflowError:
+                directory = None
+            if directory and (directory / "manifest.json").exists():
+                save_json(
+                    directory / "asr-status.json",
+                    {"complete": False, "status": "blocked", "error": safe_message(exc)},
+                )
         print("错误：" + safe_message(exc), file=sys.stderr)
         return 1
     return 0

@@ -23,6 +23,11 @@ def test_source_scope_and_tracking_removed():
         module.normalized_source("https://other.example/video/BV1wZcVevENV/")
 
 
+def test_run_data_cannot_enter_skill_repository():
+    with pytest.raises(module.WorkflowError):
+        module.output_directory(Path(__file__).parents[1] / "private-run")
+
+
 def test_srt_rounding_rolls_over():
     assert module.timestamp(59.9996, True) == "00:01:00,000"
 
